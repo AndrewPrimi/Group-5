@@ -16,4 +16,5 @@ Additional deliverables may be added to this repository as the semester progress
 - Andrew Primiano  
 - Logan Griffy  
 - Tillman Clark  
-- Gabe Braun
+- George Braun
+- Kai DeVito
