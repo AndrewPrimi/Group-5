@@ -1,7 +1,7 @@
 import pigpio
 import time
 
-LED_PIN = 18
+LED_PIN = 22
 ROTARY_PIN = 17
 
 pi = pigpio.pi()
