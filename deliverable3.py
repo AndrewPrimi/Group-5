@@ -32,6 +32,7 @@ cb = pi.callback(ROTARY_PIN, pigpio.FALLING_EDGE, toggle_callback)
 try:
     print("System Ready. Press the encoder button to toggle...")
     while True:
+        print("this is working")
         time.sleep(1) # Keep the main thread alive
 except KeyboardInterrupt:
     print("\nCleaning up...")
