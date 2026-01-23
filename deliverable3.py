@@ -1,7 +1,7 @@
 import pigpio
 import time
 
-LED_PIN = 22
+LED_PIN = 18
 ROTARY_PIN = 17
 
 pi = pigpio.pi()
@@ -18,7 +18,7 @@ pi.set_pull_up_down(ROTARY_PIN, pigpio.PUD_DOWN)
 
 button_state = 0
 
-def de_bounce():
+def light_on():
     global button_state  # This allows the function to update the variable outside
     
     current_read = pi.read(ROTARY_PIN)
@@ -36,7 +36,7 @@ def loop():
     print("Starting loop... Press Ctrl+C to stop.")
     try:
         while True:
-            de_bounce()
+            light_on()
             time.sleep(0.01) # Small delay to save CPU and help debounce
     except KeyboardInterrupt:
         pi.stop()
