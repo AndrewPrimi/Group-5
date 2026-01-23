@@ -5,40 +5,36 @@ LED_PIN = 18
 ROTARY_PIN = 17
 
 pi = pigpio.pi()
-
-# Check if connection was successful
 if not pi.connected:
     exit()
 
-pi.set_mode(ROTARY_PIN, pigpio.INPUT)
 pi.set_mode(LED_PIN, pigpio.OUTPUT)
+pi.set_mode(ROTARY_PIN, pigpio.INPUT)
+# Most encoders pull to GND when pressed, so we use PUD_UP
+pi.set_pull_up_down(ROTARY_PIN, pigpio.PUD_UP)
 
-#NEED TO SET PULL DOWN RESISTOR
-pi.set_pull_up_down(ROTARY_PIN, pigpio.PUD_DOWN)
+# Glitch filter acts as a hardware-level debounce (3000 microseconds)
+pi.set_glitch_filter(ROTARY_PIN, 3000)
 
-button_state = 0
+led_state = False
 
-def de_bounce():
-    global button_state  # This allows the function to update the variable outside
-    
-    current_read = pi.read(ROTARY_PIN)
-    
-    if current_read == 1 and button_state == 0:
-        print("Button Pressed!")
-        button_state = 1
-        pi.write(LED_PIN, 1) # Turn LED ON
-    elif current_read == 0 and button_state == 1:
-        print("Button Released!")
-        button_state = 0
-        pi.write(LED_PIN, 0) # Turn LED OFF
-    
-def loop():
-    print("Starting loop... Press Ctrl+C to stop.")
-    try:
-        while True:
-            de_bounce()
-            time.sleep(0.01) # Small delay to save CPU and help debounce
-    except KeyboardInterrupt:
-        pi.stop()
+def toggle_callback(gpio, level, tick):
+    global led_state
+    # level 0 means the button was pressed (pulled to ground)
+    if level == 0:
+        led_state = not led_state
+        pi.write(LED_PIN, led_state)
+        print(f"LED is now {'ON' if led_state else 'OFF'}")
 
-loop()
+# Set up the interrupt/callback
+cb = pi.callback(ROTARY_PIN, pigpio.FALLING_EDGE, toggle_callback)
+
+try:
+    print("System Ready. Press the encoder button to toggle...")
+    while True:
+        time.sleep(1) # Keep the main thread alive
+except KeyboardInterrupt:
+    print("\nCleaning up...")
+    pi.write(LED_PIN, 0)
+    cb.cancel()
+    pi.stop()
