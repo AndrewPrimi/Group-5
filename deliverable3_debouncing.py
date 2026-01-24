@@ -18,22 +18,19 @@ pi.set_pull_up_down(ROTARY_PIN, pigpio.PUD_UP)
 # This filters out electrical noise/bounce at the hardware level
 pi.set_glitch_filter(ROTARY_PIN, 50000)
 
-button_state = 0
+led_on = False
 
-def clean_callback(gpio, level, tick):
-    global button_state
+def toggle_callback(gpio, level, tick):
+    global led_on
 
-    if level == 1:
-        print("Button Pressed!")
-        button_state = 1
-        pi.write(LED_PIN, 1)
-    elif level == 0:
-        print("Button Released!")
-        button_state = 0
-        pi.write(LED_PIN, 0)
+    # Button press is falling edge (0) because of pull-up resistor
+    if level == 0:
+        led_on = not led_on
+        pi.write(LED_PIN, 1 if led_on else 0)
+        print(f"LED {'ON' if led_on else 'OFF'}")
 
-# Listen for both rising and falling edges
-cb = pi.callback(ROTARY_PIN, pigpio.EITHER_EDGE, clean_callback)
+# Listen for falling edge only (button press)
+cb = pi.callback(ROTARY_PIN, pigpio.FALLING_EDGE, toggle_callback)
 
 try:
     print("System Ready. Press the encoder button...")
