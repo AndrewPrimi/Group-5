@@ -53,7 +53,7 @@ try:
     for ohms in pot_values:
         step = ohms_to_step(ohms)
         set_digipot_step(step)
-        time.sleep(5)
+        time.sleep(10)
 
     # Mode 2: Increment step by one (0 to 128)
     print("\n=== Stepping through all values (0 to 128) ===")
