@@ -1,15 +1,16 @@
 import pigpio
 import time
 
-LED_PIN = 18
-ROTARY_PIN = 17
-
+LED_PIN = 18 # This is the pin on the Raspbery Pi that connects to the LED 
+ROTARY_PIN = 17 # This is the pin on the Raspberry Pi that takes the input signal from rotary encoder SW pin
+ 
 pi = pigpio.pi()
 if not pi.connected:
     exit()
 
 pi.set_mode(LED_PIN, pigpio.OUTPUT)
 pi.set_mode(ROTARY_PIN, pigpio.INPUT)
+
 # Most encoders pull to GND when pressed, so we use PUD_UP
 pi.set_pull_up_down(ROTARY_PIN, pigpio.PUD_UP)
 
@@ -33,11 +34,12 @@ def toggle_callback(gpio, level, tick):
 cb = pi.callback(ROTARY_PIN, pigpio.FALLING_EDGE, toggle_callback)
 
 try:
+    #When system boots up this print statement is used to notify the user the program started running correctly
     print("System Ready. Press the encoder button...")
     while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("\nCleaning up...")
-    pi.write(LED_PIN, 0)
-    cb.cancel()
-    pi.stop()
+        time.sleep(1) # this serves as an idle loop to keep the program running. without the sleep the loop would run millions of times per second using %100 of the CPU
+except KeyboardInterrupt: # when Ctrl+C is signal is caught instead of crashing
+    print("\nShutdown in progress...")
+    pi.write(LED_PIN, 0) #turns off led
+    cb.cancel() # unregisters callback so that it stops listening
+    pi.stop() #disconnects from pigpio daemon
