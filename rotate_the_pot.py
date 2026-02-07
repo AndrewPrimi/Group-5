@@ -107,11 +107,11 @@ def detector_and_change_steps(direction, speed):
     global ohms
 
     if speed < 1:
-        change = 100
-    else:
         change = 10
+    else:
+        change = 100
 
-    print(f"calculated speed: {speed}")
+    print(f" calculated speed: {speed}")
 
     ohms = ohms + change * direction
     step = ohms_to_step(ohms)
