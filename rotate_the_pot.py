@@ -65,6 +65,7 @@ pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 
 def encoder_callback(gpio, level, tick):
     global last_tick, ohms
+    print("CALLBACK FIRED", gpio, level)
 
     print(f"last tick: {last_tick}")
     print(f"current tick: {tick}")
@@ -114,11 +115,11 @@ def detector_and_change_steps(direction, speed):
 print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
-    print("calling callback...")
-    cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
+    cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
     print(f"cb value is {cb}")
 
     while True:
+        print(pi.read(PIN_A), pi.read(PIN_B))
         time.sleep(1)
 
 except KeyboardInterrupt:
