@@ -71,6 +71,7 @@ pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 
 # when rotar encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
 def callback_set_digi(gpio, level, tick):
+    print('This method is being called!')
     global ohms
     # Button press is falling edge (0) because of pull-up resistor
     if level == 0:
