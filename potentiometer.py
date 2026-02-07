@@ -42,7 +42,6 @@ def set_digipot_step(step_value):
     else:
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
-
 try:
     print("Starting the cycle.\nMeasure across Terminal A and Wiper.")
     print("Press Ctrl+C to stop.\n")
