@@ -102,11 +102,14 @@ def detector_and_change_steps(direction, speed):
     print(f"Current Step: {step}")
     # Write to LCD Pins
 
+print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
+    print(f"Default ohms: {ohms}")
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
 
     while True:
+        print("this is working")
         time.sleep(1)
 
 except KeyboardInterrupt:
