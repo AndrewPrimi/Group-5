@@ -45,11 +45,14 @@ def set_digipot_step(step_value):
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
+
+
 # wiper functions
 
 # Pin A connected to CLK, Pin B connected to DT
 PIN_A = 22
 PIN_B = 27
+rotaryEncoder_pin = 17
 
 # Define output pins (LCD)
 
@@ -60,7 +63,20 @@ pi.set_mode(PIN_A, pigpio.INPUT)
 pi.set_mode(PIN_B, pigpio.INPUT)
 pi.set_pull_up_down(PIN_A, pigpio.PUD_UP)
 pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
+pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
+pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
+
+
+
+# when rotar encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
+def callback_set_digi(gpio, level, tick):
+    global ohms
+    # Button press is falling edge (0) because of pull-up resistor
+    if level == 0:
+        step = ohms_to_step(ohms)
+        set_digipot_step(step)
+        print('Button pressed!')
 
 
 def encoder_callback(gpio, level, tick):
@@ -118,7 +134,7 @@ def detector_and_change_steps(direction, speed):
     if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
         ohms = ohms + change * direction
         step = ohms_to_step(ohms)
-        set_digipot_step(step)
+        #set_digipot_step(step) commented this to test button
         print(f"Current Ohms: {ohms}")
         #print(f"Current Step: {step}")
         # Write to LCD Pins
@@ -129,6 +145,7 @@ print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+    st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi )
 
     while True:
         time.sleep(1)
@@ -136,5 +153,6 @@ try:
 except KeyboardInterrupt:
     print("\nStopping...")
     cb.cancel()
+    st.cancel()
     pi.spi_close(handle)
     pi.stop()
