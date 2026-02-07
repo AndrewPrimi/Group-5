@@ -107,12 +107,12 @@ def encoder_callback(gpio, level, tick):
             direction = -1
             print("CCW")
 
-        detector_and_change_steps(direction, speed)
+        change_steps(direction, speed)
 
     last_tick = tick
 
 
-def detector_and_change_steps(direction, speed):
+def change_steps(direction, speed):
     global ohms
 
     if speed < 1:
@@ -137,9 +137,9 @@ def detector_and_change_steps(direction, speed):
 print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
-    cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+    cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
-    lcd.put_line(0, 'test') # added for lcd display
+    lcd.put_line(0, 'test')  # added for lcd display
 
     while True:
         time.sleep(1)
