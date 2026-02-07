@@ -52,7 +52,7 @@ def set_lcd():
     global ohms
     # Button press is falling edge (0) because of pull-up resistor
     step = ohms_to_step(ohms)
-    lcd.put_line(0, step_to_ohms(step))  # added for lcd display
+    lcd.put_line(0, str(step_to_ohms(step)))  # added for lcd display
 
 
 # wiper functions
