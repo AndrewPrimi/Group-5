@@ -52,7 +52,7 @@ def set_lcd():
     global ohms
     # Button press is falling edge (0) because of pull-up resistor
     step = ohms_to_step(ohms)
-    lcd.put_line(0, step_to_ohms(step))  # added for lcd display
+    lcd.put_line(0, str(step_to_ohms(step)))  # added for lcd display
 
 
 # wiper functions
@@ -139,7 +139,7 @@ def change_steps(direction, speed):
         # set_digipot_step(step) commented this to test button
         print(f"Current Ohms: {ohms}")
         # print(f"Current Step: {step}")
-        # Write to LCD Pins
+        set_lcd()
     else:
         print("ohm value is out of range...")
 
@@ -150,8 +150,8 @@ try:
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
-    lcd.put_line(0, 'test')  # added for lcd display
-
+    set_lcd()
+    
     while True:
         time.sleep(1)
 
