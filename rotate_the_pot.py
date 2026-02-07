@@ -3,8 +3,8 @@ import time
 import i2c_lcd
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
-MINIMUM_OHMS = 100
-MAXIMUM_OHMS = 10000
+MINIMUM_OHMS = 50
+MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 100
 
@@ -77,7 +77,7 @@ pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 pi.set_glitch_filter(PIN_A, 1000)
 pi.set_glitch_filter(PIN_B, 1000)
 
-# when rotar encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
+# when rotary encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
 
 
 def callback_set_digi(gpio, level, tick):
