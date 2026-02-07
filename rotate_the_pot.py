@@ -74,8 +74,8 @@ pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
 
-pi.set_glitch_filter(PIN_A, 2000)
-pi.set_glitch_filter(PIN_B, 2000)
+pi.set_glitch_filter(PIN_A, 500)
+pi.set_glitch_filter(PIN_B, 500)
 
 # when rotary encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
 
@@ -102,7 +102,7 @@ def encoder_callback(gpio, level, tick):
         dt = pigpio.tickDiff(last_tick, tick)  # microseconds
 
         # Debounce
-        if dt < 1500:
+        if dt < 2000:
             last_tick = tick
             return
 
