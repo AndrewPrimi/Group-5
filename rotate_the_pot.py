@@ -106,25 +106,23 @@ def encoder_callback(gpio, level, tick):
 def detector_and_change_steps(direction, speed):
     global ohms
 
-    if direction is -1 and ohms > MINIMUM_OHMS:
-        if speed < 1:
-            change = 10
-        else:
-            change = 100
-    elif direction is 1 and ohms < MAXIMUM_OHMS:
-        if speed < 1:
-            change = 10
-        else:
-            change = 100
+    if speed < 1:
+        change = 10
+    else:
+        change = 100
 
     print(f" calculated speed: {speed}")
 
-    ohms = ohms + change * direction
-    step = ohms_to_step(ohms)
-    set_digipot_step(step)
-    print(f"Current Ohms: {ohms}")
-    #print(f"Current Step: {step}")
-    # Write to LCD Pins
+    resulting_ohms = ohms + change * direction
+    if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
+        ohms = ohms + change * direction
+        step = ohms_to_step(ohms)
+        set_digipot_step(step)
+        print(f"Current Ohms: {ohms}")
+        #print(f"Current Step: {step}")
+        # Write to LCD Pins
+    else:
+        print("ohm value is out of range...")
 
 print("Entering try block.")
 try:
@@ -132,7 +130,6 @@ try:
     cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
 
     while True:
-        print(pi.read(PIN_A), pi.read(PIN_B))
         time.sleep(1)
 
 except KeyboardInterrupt:
