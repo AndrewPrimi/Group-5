@@ -114,6 +114,7 @@ def detector_and_change_steps(direction, speed):
 print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
+    print("calling callback...")
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
 
     while True:
