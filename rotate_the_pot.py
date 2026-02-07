@@ -35,8 +35,6 @@ def ohms_to_step(ohms):
 
 def step_to_ohms(step):
     """Convert step value to approximate Ohms."""
-    ohms = (step / MAX_STEPS) * MAXIMUM_OHMS
-    lcd.put_line(0, ohms) # added for lcd display
     return (step / MAX_STEPS) * MAXIMUM_OHMS
 
 
@@ -141,6 +139,7 @@ try:
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
+    lcd.put_line(0, 'test') # added for lcd display
 
     while True:
         time.sleep(1)
