@@ -48,8 +48,8 @@ def set_digipot_step(step_value):
 # wiper functions
 
 # Pin A connected to CLK, Pin B connected to DT
-PIN_A = 15
-PIN_B = 13
+PIN_A = 13
+PIN_B = 15
 
 # Define output pins (LCD)
 
