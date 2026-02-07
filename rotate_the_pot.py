@@ -66,8 +66,8 @@ pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 def encoder_callback(gpio, level, tick):
     global last_tick, ohms
 
-    print(f"last tick: {last_tick}")
-    print(f"current tick: {tick}")
+    #print(f"last tick: {last_tick}")
+    #print(f"current tick: {tick}")
 
     """Determine speed and direction of the rotation of the KY-040."""
 
@@ -84,12 +84,20 @@ def encoder_callback(gpio, level, tick):
 
         # -1 = CCW, 1 = CW
         print(f"level is currently: {level}")
-        if pi.read(PIN_B) != level:
-            print("CW")
-            direction = 1
+        if level == 1:
+            if (pi.read(PIN_B) == 0):
+                direction = 1
+                print("CW")
+            else:
+                direction = -1
+                print("CCW")
         else:
-            print("CCW")
-            direction = -1
+            if (pi.read(PIN_B) == 0):
+                direction = -1
+                print("CCW")
+            else:
+                direction = 1
+                print("CW")
 
         detector_and_change_steps(direction, speed)
 
@@ -98,10 +106,10 @@ def encoder_callback(gpio, level, tick):
 def detector_and_change_steps(direction, speed):
     global ohms
 
-    if speed < 5:
-        change = 10
-    else:
+    if speed < 1:
         change = 100
+    else:
+        change = 10
 
     print(f"calculated speed: {speed}")
 
@@ -109,7 +117,7 @@ def detector_and_change_steps(direction, speed):
     step = ohms_to_step(ohms)
     set_digipot_step(step)
     print(f"Current Ohms: {ohms}")
-    print(f"Current Step: {step}")
+    #print(f"Current Step: {step}")
     # Write to LCD Pins
 
 print("Entering try block.")
