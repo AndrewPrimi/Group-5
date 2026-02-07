@@ -136,7 +136,7 @@ def change_steps(direction, speed):
         # set_digipot_step(step) commented this to test button
         print(f"Current Ohms: {ohms}")
         # print(f"Current Step: {step}")
-        # Write to LCD Pins
+        set_lcd()
     else:
         print("ohm value is out of range...")
 
