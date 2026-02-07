@@ -122,7 +122,7 @@ def encoder_callback(gpio, level, tick):
 def change_steps(direction, speed):
     global ohms
 
-    if speed < 1:
+    if speed < 10:
         change = 10
     else:
         change = 100
