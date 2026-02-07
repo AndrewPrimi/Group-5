@@ -48,6 +48,13 @@ def set_digipot_step(step_value):
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
+def set_lcd():
+    global ohms
+    # Button press is falling edge (0) because of pull-up resistor
+    step = ohms_to_step(ohms)
+    lcd.put_line(0, step_to_ohms(step))  # added for lcd display
+
+
 # wiper functions
 # Pin A connected to CLK, Pin B connected to DT
 PIN_A = 22
