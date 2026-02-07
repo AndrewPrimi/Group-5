@@ -74,8 +74,12 @@ pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
 
+pi.set_glitch_filter(PIN_A, 1000)
+pi.set_glitch_filter(PIN_B, 1000)
 
 # when rotar encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
+
+
 def callback_set_digi(gpio, level, tick):
     print('This method is being called!')
     global ohms
@@ -98,7 +102,7 @@ def encoder_callback(gpio, level, tick):
         dt = pigpio.tickDiff(last_tick, tick)  # microseconds
 
         # Debounce
-        if dt < 2000:
+        if dt < 1500:
             last_tick = tick
             return
 
@@ -106,7 +110,6 @@ def encoder_callback(gpio, level, tick):
         speed = min(1_000_000 / dt, 1000)  # pulses per second
 
         # -1 = CCW, 1 = CW
-        print(f"level is currently: {level}")
         if pi.read(PIN_B) == 0:
             direction = 1
             print("CW")
@@ -143,7 +146,6 @@ def change_steps(direction, speed):
 
 print("Entering try block.")
 try:
-   
 
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
