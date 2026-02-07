@@ -65,20 +65,26 @@ pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 
 def encoder_callback(gpio, level, tick):
     global last_tick, ohms
+
+    print(f"last tick: {last_tick}")
+    print(f"current tick: {tick}")
+
     """Determine speed and direction of the rotation of the KY-040."""
-    while (True):
 
-        # Edge must be 1
-        if level != 1:
+    if last_tick is not None:
+        dt = pigpio.tickDiff(last_tick, tick)  # microseconds
+
+        # Debounce
+        if dt < 2000:
+            last_tick = tick
             return
-        if last_tick is not None:
-            dt = pigpio.tickDiff(last_tick, tick)  # microseconds
-            # Set dt to 1000 to prevent debouncing
-            speed = min(1_000_000 / dt, 1000)  # pulses per second
 
-            # -1 = CCW, 1 = CW
-            if pi.read(PIN_B) != level:
-                print("CCW")
+        # Set dt to 1000 to clamp the speed
+        speed = min(1_000_000 / dt, 1000)  # pulses per second
+
+        # -1 = CCW, 1 = CW
+        if pi.read(PIN_B) != level:
+            print("CCW")
             direction = -1
         else:
             print("CW")
@@ -86,7 +92,7 @@ def encoder_callback(gpio, level, tick):
 
         detector_and_change_steps(direction, speed)
 
-        last_tick = tick
+    last_tick = tick
 
 def detector_and_change_steps(direction, speed):
     global ohms
@@ -95,6 +101,8 @@ def detector_and_change_steps(direction, speed):
         change = 10
     else:
         change = 100
+
+    print(f"calculated speed: {speed}")
 
     ohms = ohms + change * direction
     step = ohms_to_step(ohms)
