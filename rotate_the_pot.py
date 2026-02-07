@@ -45,10 +45,7 @@ def set_digipot_step(step_value):
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
-
-
 # wiper functions
-
 # Pin A connected to CLK, Pin B connected to DT
 PIN_A = 22
 PIN_B = 27
@@ -68,7 +65,6 @@ pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
 
 
-
 # when rotar encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
 def callback_set_digi(gpio, level, tick):
     print('This method is being called!')
@@ -83,8 +79,8 @@ def callback_set_digi(gpio, level, tick):
 def encoder_callback(gpio, level, tick):
     global last_tick, ohms
 
-    #print(f"last tick: {last_tick}")
-    #print(f"current tick: {tick}")
+    # print(f"last tick: {last_tick}")
+    # print(f"current tick: {tick}")
 
     """Determine speed and direction of the rotation of the KY-040."""
 
@@ -94,32 +90,24 @@ def encoder_callback(gpio, level, tick):
         # Debounce
         if dt < 2000:
             last_tick = tick
-            
-            #return
+            return
 
         # Set dt to 1000 to clamp the speed
         speed = min(1_000_000 / dt, 1000)  # pulses per second
 
         # -1 = CCW, 1 = CW
         print(f"level is currently: {level}")
-        if level == 1:
-            if (pi.read(PIN_B) == 0):
-                direction = 1
-                print("CW")
-            else:
-                direction = -1
-                print("CCW")
+        if pi.read(PIN_B) == 0:
+            direction = 1
+            print("CW")
         else:
-            if (pi.read(PIN_B) == 0):
-                direction = -1
-                print("CCW")
-            else:
-                direction = 1
-                print("CW")
+            direction = -1
+            print("CCW")
 
         detector_and_change_steps(direction, speed)
 
     last_tick = tick
+
 
 def detector_and_change_steps(direction, speed):
     global ohms
@@ -135,18 +123,19 @@ def detector_and_change_steps(direction, speed):
     if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
         ohms = ohms + change * direction
         step = ohms_to_step(ohms)
-        #set_digipot_step(step) commented this to test button
+        # set_digipot_step(step) commented this to test button
         print(f"Current Ohms: {ohms}")
-        #print(f"Current Step: {step}")
+        # print(f"Current Step: {step}")
         # Write to LCD Pins
     else:
         print("ohm value is out of range...")
+
 
 print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
-    st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi )
+    st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
 
     while True:
         time.sleep(1)
