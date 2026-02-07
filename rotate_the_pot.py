@@ -143,6 +143,8 @@ def change_steps(direction, speed):
 
 print("Entering try block.")
 try:
+   
+
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
@@ -153,6 +155,7 @@ try:
 
 except KeyboardInterrupt:
     print("\nStopping...")
+    lcd.close()
     cb.cancel()
     st.cancel()
     pi.spi_close(handle)
