@@ -77,7 +77,8 @@ def encoder_callback(gpio, level, tick):
         # Debounce
         if dt < 2000:
             last_tick = tick
-            return
+            
+            #return
 
         # Set dt to 1000 to clamp the speed
         speed = min(1_000_000 / dt, 1000)  # pulses per second
