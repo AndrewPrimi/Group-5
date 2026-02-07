@@ -106,10 +106,16 @@ def encoder_callback(gpio, level, tick):
 def detector_and_change_steps(direction, speed):
     global ohms
 
-    if speed < 1:
-        change = 10
-    else:
-        change = 100
+    if direction is -1 and ohms > MINIMUM_OHMS:
+        if speed < 1:
+            change = 10
+        else:
+            change = 100
+    elif direction is 1 and ohms < MAXIMUM_OHMS:
+        if speed < 1:
+            change = 10
+        else:
+            change = 100
 
     print(f" calculated speed: {speed}")
 
