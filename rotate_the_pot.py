@@ -3,7 +3,7 @@ import time
 import i2c_lcd
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
-MINIMUM_OHMS = 50
+MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 100
@@ -74,8 +74,8 @@ pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
 
-pi.set_glitch_filter(PIN_A, 1000)
-pi.set_glitch_filter(PIN_B, 1000)
+pi.set_glitch_filter(PIN_A, 2000)
+pi.set_glitch_filter(PIN_B, 2000)
 
 # when rotary encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
 
@@ -151,7 +151,7 @@ try:
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
     set_lcd()
-    
+
     while True:
         time.sleep(1)
 
