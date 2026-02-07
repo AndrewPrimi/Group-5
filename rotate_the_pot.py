@@ -48,8 +48,8 @@ def set_digipot_step(step_value):
 # wiper functions
 
 # Pin A connected to CLK, Pin B connected to DT
-PIN_A = 13
-PIN_B = 15
+PIN_A = 15
+PIN_B = 13
 
 # Define output pins (LCD)
 
@@ -116,6 +116,7 @@ try:
     ohms = DEFAULT_OHMS
     print("calling callback...")
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
+    print(f"cb value is {cb}")
 
     while True:
         time.sleep(1)
