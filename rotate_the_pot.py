@@ -1,5 +1,6 @@
 import pigpio
 import time
+import i2c_lcd
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
 MINIMUM_OHMS = 100
@@ -13,6 +14,8 @@ SPI_SPEED = 50000
 SPI_FLAGS = 0
 
 pi = pigpio.pi()
+
+lcd = i2c_lcd.lcd(pi, width=20)
 
 # Check if connection was successful
 if not pi.connected:
@@ -32,6 +35,8 @@ def ohms_to_step(ohms):
 
 def step_to_ohms(step):
     """Convert step value to approximate Ohms."""
+    ohms = (step / MAX_STEPS) * MAXIMUM_OHMS
+    lcd.put_line(0, ohms) # added for lcd display
     return (step / MAX_STEPS) * MAXIMUM_OHMS
 
 
