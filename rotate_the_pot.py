@@ -1,12 +1,12 @@
+from pot_lcd import PotLCD
 import pigpio
 import time
 import sys
 sys.path.insert(0, 'checkpoint_c')
-from pot_lcd import PotLCD
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
-MINIMUM_OHMS = 40
-MAXIMUM_OHMS = 11000
+MINIMUM_OHMS = 10
+MAXIMUM_OHMS = 12000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
 SPEED_LIMIT = 100

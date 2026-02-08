@@ -16,6 +16,7 @@ _lcd = None
 PIN_A = 22
 PIN_B = 27
 
+
 def setup_callbacks(state, pi, lcd):
     """Give callbacks access to shared state and LCD."""
     global _s, _pi, _lcd
@@ -127,7 +128,7 @@ def callback_set_digi(gpio, level, tick):
     elif level == 1 and _s['button_press_tick'] is not None:
         hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
         _s['button_press_tick'] = None
-        if hold_time >= 3_000_000:  # 3 seconds
+        if hold_time >= 2_000_000:  # 3 seconds
             _s['ohms'] = DEFAULT_OHMS
             _set_digipot_step(ohms_to_step(DEFAULT_OHMS))
             _s['isMainPage'] = True
