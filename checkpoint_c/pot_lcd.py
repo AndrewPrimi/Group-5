@@ -2,6 +2,8 @@ import pigpio
 import time
 import i2c_lcd
 
+import ohms_steps
+
 # Constants; 7-bit digital potentiometer (0-128 steps)
 MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
@@ -30,36 +32,12 @@ print(f"Pot 1 handle: {handle_pot1}")
 print(f"Pot 2 handle: {handle_pot2}")
 
 
-def ohms_to_step(ohms):
-    """Convert desired Ohms to a step value (0-128)."""
-    ohms = max(0, min(ohms, MAXIMUM_OHMS))
-    step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
-    return step
-
-
-def step_to_ohms(step):
-    """Convert step value to approximate Ohms."""
-    return (step / MAX_STEPS) * MAXIMUM_OHMS
-
-
-def set_digipot_step(step_value):
-    """Write data bytes to the currently selected MCP4131's SPI device handle."""
-    if 0 <= step_value <= MAX_STEPS:
-        h = handle_pot1 if selected_pot == 0 else handle_pot2
-        pi.spi_write(h, [0x00, step_value])
-        approx_ohms = step_to_ohms(step_value)
-        print(
-            f"Pot {selected_pot + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
-    else:
-        print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
-
-
 def set_lcd():
     """Update LCD with current ohms value for the active pot."""
     global ohms
-    step = ohms_to_step(ohms)
+    step = ohms_steps.ohms_to_step(ohms)
     lcd.put_line(0, f'Pot {selected_pot + 1}')
-    lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+    lcd.put_line(1, f'Ohms: {ohms_steps.step_to_ohms(step):.1f}')
     lcd.put_line(2, '')
     lcd.put_line(3, '')
 
@@ -135,8 +113,8 @@ def callback_set_digi(gpio, level, tick):
     if level == 0:
         # Button pressed - record the tick for long-press detection
         button_press_tick = tick
-        step = ohms_to_step(ohms)
-        set_digipot_step(step)
+        step = ohms_steps.ohms_to_step(ohms)
+        ohms_steps.set_digipot_step(step)
         lcd.put_line(2, 'Value set!')
         lcd.put_line(3, f'Pot {selected_pot + 1} updated')
         print('Button pressed! Value sent to digi pot.')
