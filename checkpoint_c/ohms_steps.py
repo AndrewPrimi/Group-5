@@ -1,3 +1,22 @@
+# Constants; 7-bit digital potentiometer (0-128 steps)
+MINIMUM_OHMS = 40
+MAXIMUM_OHMS = 11000
+MAX_STEPS = 128
+DEFAULT_OHMS = 5000
+SPEED_LIMIT = 100
+
+# Debounce constants (microseconds)
+ENCODER_DEBOUNCE_US = 10000    # 10ms encoder debounce
+MENU_DEBOUNCE_US = 15000       # 15ms menu encoder debounce
+BUTTON_DEBOUNCE_US = 200000    # 200ms button debounce
+
+# SPI settings
+SPI_CHANNEL_0 = 0
+SPI_CHANNEL_1 = 1
+SPI_SPEED = 50000
+SPI_FLAGS = 0
+
+
 def ohms_to_step(ohms):
     """Convert desired Ohms to a step value (0-128)."""
     ohms = max(0, min(ohms, MAXIMUM_OHMS))
@@ -8,15 +27,3 @@ def ohms_to_step(ohms):
 def step_to_ohms(step):
     """Convert step value to approximate Ohms."""
     return (step / MAX_STEPS) * MAXIMUM_OHMS
-
-
-def set_digipot_step(step_value):
-    """Write data bytes to the currently selected MCP4131's SPI device handle."""
-    if 0 <= step_value <= MAX_STEPS:
-        h = handle_pot1 if selected_pot == 0 else handle_pot2
-        pi.spi_write(h, [0x00, step_value])
-        approx_ohms = step_to_ohms(step_value)
-        print(
-            f"Pot {selected_pot + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
-    else:
-        print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
