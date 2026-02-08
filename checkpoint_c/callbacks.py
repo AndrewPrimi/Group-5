@@ -35,8 +35,11 @@ def setup_callbacks(state, pi, pot_lcd):
 
 def menu_encoder_callback(gpio, level, tick):
     """Rotate between Pot 1 and Pot 2 on the main page."""
-    # Only 2 options, so just toggle on each clean edge (glitch filter handles debounce)
-    _s['menu_selection'] = 1 - _s['menu_selection']
+    # Use direction so duplicate edges don't cancel out
+    if _pi.read(PIN_B) == 0:
+        _s['menu_selection'] = 1   # CW -> Pot 2
+    else:
+        _s['menu_selection'] = 0   # CCW -> Pot 1
     _pot_lcd.request_main_page_update(_s['menu_selection'])
 
 
