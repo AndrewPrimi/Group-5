@@ -46,7 +46,7 @@ def set_digipot_step(step_value):
     """Write data bytes to the currently selected MCP4131's SPI device handle."""
     if 0 <= step_value <= MAX_STEPS:
         h = handle_pot1 if selected_pot == 0 else handle_pot2
-        pi.spi_write(h, [0x00, step_value]) # this is for pot side one
+        pi.spi_write(h, [0x00, step_value])  # this is for pot side one
         approx_ohms = step_to_ohms(step_value)
         print(
             f"Pot {selected_pot + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
@@ -149,30 +149,34 @@ def callback_set_digi(gpio, level, tick):
 
 
 def encoder_callback(gpio, level, tick):
-    global last_tick, ohms
+    global ohms, last_tick
 
     if last_tick is not None:
         dt = pigpio.tickDiff(last_tick, tick)
 
-        # Debounce
-        if dt < 2000:
-            last_tick = tick
+        # Ignore bounce / micro jitter
+        if dt < 3000:   # ~3 ms
             return
 
-        speed = min(1_000_000 / dt, 1000)
-        # Set dt to 1000 to clamp the speed
-        speed = min(1_000_000 / dt, 1000)  # pulses per second
-        print(f"speed: {speed}")
-
+        # Direction determined ONLY here
         if pi.read(PIN_B) == 0:
             direction = 1
-            print("CW")
         else:
             direction = -1
-            print("CCW")
 
-        if speed <= SPEED_LIMIT:
-            change_steps(direction, speed)
+        # Speed based on time between detents
+        speed = 1_000_000 / dt  # detents per second
+
+        if speed < SPEED_LIMIT:
+            change = 10
+        else:
+            change = 100
+
+        new_ohms = ohms + direction * change
+        if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
+            ohms = new_ohms
+            set_lcd()
+            print(f"Ohms={ohms}, speed={speed:.1f}")
 
     last_tick = tick
 
@@ -226,7 +230,7 @@ try:
 
         draw_main_page()
 
-        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE,
+        cb_enc = pi.callback(PIN_A, pigpio.RISING_EDGE,
                              menu_encoder_callback)
         # cb_enc_b = pi.callback(PIN_B, pigpio.FALLING_EDGE,
         # menu_encoder_callback)
