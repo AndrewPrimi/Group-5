@@ -149,35 +149,53 @@ def callback_set_digi(gpio, level, tick):
 
 
 def encoder_callback(gpio, level, tick):
-    global last_tick, ohms
+    global last_state, last_step_tick, ohms
 
-    if last_tick is not None:
-        dt = pigpio.tickDiff(last_tick, tick)
-        print(f"dt is equal to: {dt}")
+    a = pi.read(PIN_A)
+    b = pi.read(PIN_B)
+    state = (a << 1) | b
 
-        # Debounce
-        if dt < 2000:
-            last_tick = tick
-            return
+    # State transition table
+    transitions = {
+        (0b00, 0b01):  1,
+        (0b01, 0b11):  1,
+        (0b11, 0b10):  1,
+        (0b10, 0b00):  1,
+        (0b00, 0b10): -1,
+        (0b10, 0b11): -1,
+        (0b11, 0b01): -1,
+        (0b01, 0b00): -1,
+    }
 
-        speed = min(1_000_000 / dt, 1000)
-        # Set dt to 1000 to clamp the speed
-        speed = min(1_000_000 / dt, 1000)  # pulses per second
-        print(f"speed: {speed}")
+    move = transitions.get((last_state, state), 0)
+    last_state = state
 
-        pi.set_glitch_filter(PIN_B, 2000)
+    if move == 0:
+        return  # bounce or invalid transition
 
-        if pi.read(PIN_B) == 0:
-            direction = 1
-            print("CW")
-        else:
-            direction = -1
-            print("CCW")
+    # Only count a full detent (every 4 transitions)
+    if state not in (0b00, 0b11):
+        return
 
-        if speed <= SPEED_LIMIT:
-            change_steps(direction, speed)
+    if last_step_tick is None:
+        last_step_tick = tick
+        return
 
-    last_tick = tick
+    dt = pigpio.tickDiff(last_step_tick, tick)
+    last_step_tick = tick
+
+    speed = 1_000_000 / dt  # steps per second
+
+    if speed < SPEED_LIMIT:
+        change = 10
+    else:
+        change = 100
+
+    new_ohms = ohms + move * change
+    if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
+        ohms = new_ohms
+        set_lcd()
+        print(f"Ω = {ohms} | speed={speed:.1f}")
 
 
 def change_steps(direction, speed):
@@ -248,7 +266,10 @@ try:
         ohms = DEFAULT_OHMS
         set_lcd()
 
-        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc_a = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc_b = pi.callback(PIN_B, pigpio.EITHER_EDGE, encoder_callback)
+        active_callbacks = [cb_enc_a, cb_enc_b, cb_btn]
+
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
         active_callbacks = [cb_enc, cb_btn]
