@@ -55,14 +55,6 @@ def set_digipot_step(step_value):
     if 0 <= step_value <= MAX_STEPS:
         h = handle_pot1 if selected_pot == 0 else handle_pot2
 
-        # adjust step_value to add/subtract
-        if step_value < 4:
-            step_value -= 200
-        elif step_value < 12:
-            step_value -= 100
-        else:
-            step_value += 200
-
         pi.spi_write(h, [0x00, step_value])
         approx_ohms = step_to_ohms(step_value)
         print(
