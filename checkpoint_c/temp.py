@@ -49,6 +49,13 @@ def set_digipot_step(step_value):
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
+def set_lcd():
+    global ohms
+    # Button press is falling edge (0) because of pull-up resistor
+    step = ohms_to_step(ohms)
+    lcd.put_line(0, str(step_to_ohms(step)))  # added for lcd display
+
+
 # wiper functions
 # Pin A connected to CLK, Pin B connected to DT
 PIN_A = 22
@@ -130,7 +137,7 @@ def change_steps(direction, speed):
         set_digipot_step(step)
         print(f"Current Ohms: {ohms}")
         # print(f"Current Step: {step}")
-        # Write to LCD Pins
+        set_lcd()
     else:
         print("ohm value is out of range...")
 
@@ -140,14 +147,15 @@ try:
     ohms = DEFAULT_OHMS
     cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
-    lcd.put_line(0, 'test')  # added for lcd display
+
+    set_lcd()
 
     while True:
-        print(pi.read(PIN_A), pi.read(PIN_B))
         time.sleep(1)
 
 except KeyboardInterrupt:
     print("\nStopping...")
+    lcd.close()
     cb.cancel()
     st.cancel()
     pi.spi_close(handle)
