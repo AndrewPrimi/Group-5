@@ -57,6 +57,7 @@ rotaryEncoder_pin = 17
 # Define output pins (LCD)
 
 last_tick = None
+
 ohms = DEFAULT_OHMS
 
 pi.set_mode(PIN_A, pigpio.INPUT)
@@ -65,10 +66,10 @@ pi.set_pull_up_down(PIN_A, pigpio.PUD_UP)
 pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
-# set_mode pigpio.OUTPUT s
-
 
 # when rotar encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
+
+
 def callback_set_digi(gpio, level, tick):
     print('This method is being called!')
     global ohms
@@ -81,9 +82,6 @@ def callback_set_digi(gpio, level, tick):
 
 def encoder_callback(gpio, level, tick):
     global last_tick, ohms
-
-    # print(f"last tick: {last_tick}")
-    # print(f"current tick: {tick}")
 
     """Determine speed and direction of the rotation of the KY-040."""
 
@@ -116,7 +114,7 @@ def encoder_callback(gpio, level, tick):
 def change_steps(direction, speed):
     global ohms
 
-    if speed < 1:
+    if speed < 10:
         change = 10
     else:
         change = 100
@@ -138,7 +136,7 @@ def change_steps(direction, speed):
 print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
-    cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
+    cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
     st = pi.callback(rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
     lcd.put_line(0, 'test')  # added for lcd display
 
