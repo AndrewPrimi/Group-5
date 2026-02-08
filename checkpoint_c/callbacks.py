@@ -97,9 +97,9 @@ def encoder_callback(gpio, level, tick):
         speed = min(1_000_000 / dt, 1000)
 
         if _pi.read(PIN_B) == 0:
-            direction = 1
+            direction = -1  # temp swap
         else:
-            direction = -1
+            direction = 1  # temp swap
 
         if speed <= SPEED_LIMIT:
             _change_steps(direction, speed)
@@ -134,7 +134,8 @@ def _change_steps(direction, speed):
         _s['ohms'] = resulting_ohms
         print(f"Current Ohms: {_s['ohms']}")
         step = ohms_to_step(_s['ohms'])
-        _pot_lcd.request_pot_page_update(step_to_ohms(step), _s['selected_pot'])
+        _pot_lcd.request_pot_page_update(
+            step_to_ohms(step), _s['selected_pot'])
     else:
         print("ohm value is out of range...")
 
