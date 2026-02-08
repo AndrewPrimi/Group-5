@@ -7,6 +7,7 @@ MINIMUM_OHMS = 100
 MAXIMUM_OHMS = 10000
 MAX_STEPS = 128
 DEFAULT_OHMS = 100
+SPEED_LIMIT = 100
 
 # Set up SPI
 SPI_CHANNEL = 0
@@ -48,7 +49,6 @@ def set_digipot_step(step_value):
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
-# wiper functions
 # Pin A connected to CLK, Pin B connected to DT
 PIN_A = 22
 PIN_B = 27
@@ -97,9 +97,9 @@ def encoder_callback(gpio, level, tick):
 
         # Set dt to 1000 to clamp the speed
         speed = min(1_000_000 / dt, 1000)  # pulses per second
+        print(f"Speed: {speed}")
 
         # -1 = CCW, 1 = CW
-        print(f"level is currently: {level}")
         if pi.read(PIN_B) == 0:
             direction = 1
             print("CW")
@@ -107,7 +107,8 @@ def encoder_callback(gpio, level, tick):
             direction = -1
             print("CCW")
 
-        change_steps(direction, speed)
+        if speed <= SPEED_LIMIT:
+            change_steps(direction, speed)
 
     last_tick = tick
 
@@ -126,7 +127,7 @@ def change_steps(direction, speed):
     if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
         ohms = ohms + change * direction
         step = ohms_to_step(ohms)
-        # set_digipot_step(step) commented this to test button
+        set_digipot_step(step)  # commented this to test button
         print(f"Current Ohms: {ohms}")
         # print(f"Current Step: {step}")
         # Write to LCD Pins
