@@ -148,52 +148,51 @@ def callback_set_digi(gpio, level, tick):
             return_to_main()
 
 
-last_b = None
+last_state = None
+last_step_tick = None
 
 
 def encoder_callback(gpio, level, tick):
-    global ohms, last_tick
+    global last_state, last_step_tick, ohms
 
-    if last_tick is not None:
-        dt = pigpio.tickDiff(last_tick, tick)
+    a = pi.read(PIN_A)
+    b = pi.read(PIN_B)
+    state = (a << 1) | b
 
-        # Ignore bounce / micro jitter
-        if dt < 3000:   # ~3 ms
-            return
+    if last_state is None:
+        last_state = state
+        return
 
-        # Direction determined ONLY here
-        # if pi.read(PIN_B) == 0:
-        #     direction = 1
-        # else:
-        #     direction = -1
+    # Determine direction from state progression
+    if (last_state, state) in ((0, 1), (1, 3), (3, 2), (2, 0)):
+        direction = 1     # CW
+    elif (last_state, state) in ((0, 2), (2, 3), (3, 1), (1, 0)):
+        direction = -1    # CCW
+    else:
+        last_state = state
+        return  # bounce or invalid transition
 
-        b = pi.read(PIN_B)
+    last_state = state
 
-        if last_b is None:
-            last_b = b
-            return
+    # Only act once per detent (state == 00)
+    if state != 0:
+        return
 
-        if b == last_b:
-            return  # unstable / missed transition
+    if last_step_tick is None:
+        last_step_tick = tick
+        return
 
-        direction = 1 if b == 0 else -1
-        last_b = b
+    dt = pigpio.tickDiff(last_step_tick, tick)
+    last_step_tick = tick
 
-        # Speed based on time between detents
-        speed = 1_000_000 / dt  # detents per second
+    speed = 1_000_000 / dt
 
-        if speed < SPEED_LIMIT:
-            change = 10
-        else:
-            change = 100
+    change = 10 if speed < SPEED_LIMIT else 100
 
-        new_ohms = ohms + direction * change
-        if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
-            ohms = new_ohms
-            set_lcd()
-            print(f"Ohms={ohms}, speed={speed:.1f}")
-
-    last_tick = tick
+    new_ohms = ohms + direction * change
+    if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
+        ohms = new_ohms
+        set_lcd()
 
 
 def change_steps(direction, speed):
@@ -245,8 +244,8 @@ try:
 
         draw_main_page()
 
-        cb_enc = pi.callback(PIN_A, pigpio.RISING_EDGE,
-                             menu_encoder_callback)
+        cb_enc_a = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc_b = pi.callback(PIN_B, pigpio.EITHER_EDGE, encoder_callback)
         # cb_enc_b = pi.callback(PIN_B, pigpio.FALLING_EDGE,
         # menu_encoder_callback)
         cb_btn = pi.callback(
