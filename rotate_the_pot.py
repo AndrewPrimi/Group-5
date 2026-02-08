@@ -7,7 +7,6 @@ MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
-SPEED_LIMIT = 100
 
 # Set up SPI
 SPI_CHANNEL_0 = 0
@@ -68,11 +67,11 @@ def draw_main_page():
     """Draw main page with < indicator on the selected pot."""
     lcd.put_line(0, 'Select a Pot:')
     if menu_selection == 0:
-        lcd.put_line(1, '> Pot 1')
+        lcd.put_line(1, '< Pot 1')
         lcd.put_line(2, '  Pot 2')
     else:
         lcd.put_line(1, '  Pot 1')
-        lcd.put_line(2, '> Pot 2')
+        lcd.put_line(2, '< Pot 2')
     lcd.put_line(3, '')
 
 
@@ -162,10 +161,6 @@ def encoder_callback(gpio, level, tick):
         speed = min(1_000_000 / dt, 1000)
         # Set dt to 1000 to clamp the speed
         speed = min(1_000_000 / dt, 1000)  # pulses per second
-        if speed > SPEED_LIMIT:
-            speed = SPEED_LIMIT
-
-        print(f"speed: {speed}")
 
         if pi.read(PIN_B) == 0:
             direction = 1
@@ -242,7 +237,8 @@ try:
         ohms = DEFAULT_OHMS
         set_lcd()
 
-        cb_enc = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
+        cb_enc1 = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc2 = pi.callback(PIN_B, pigpio.EITHER_EDGE, encoder_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
         active_callbacks = [cb_enc, cb_btn]
