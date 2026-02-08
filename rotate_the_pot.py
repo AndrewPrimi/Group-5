@@ -81,8 +81,6 @@ rotaryEncoder_pin = 17
 
 last_tick = None
 
-# Independent ohms values for each pot
-pot_ohms = [DEFAULT_OHMS, DEFAULT_OHMS]
 ohms = DEFAULT_OHMS
 selected_pot = 0
 menu_selection = 0
@@ -182,7 +180,6 @@ def change_steps(direction, speed):
     resulting_ohms = ohms + change * direction
     if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
         ohms = ohms + change * direction
-        pot_ohms[selected_pot] = ohms
         print(f"Current Ohms: {ohms}")
         set_lcd()
     else:
@@ -205,7 +202,6 @@ def return_to_main():
     """Reset pot ohms to default and go back to main page."""
     global isMainPage, ohms
     ohms = DEFAULT_OHMS
-    pot_ohms[selected_pot] = DEFAULT_OHMS
     isMainPage = True
 
 
@@ -233,7 +229,7 @@ try:
         last_tick = None
         clear_callbacks()
 
-        ohms = pot_ohms[selected_pot]
+        ohms = DEFAULT_OHMS
         set_lcd()
 
         cb_enc = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
