@@ -155,8 +155,8 @@ last_step_tick = None
 def encoder_callback(gpio, level, tick):
     global last_state, last_step_tick, ohms
 
-    a = pi.read(PIN_B)
-    b = pi.read(PIN_A)
+    a = pi.read(PIN_A)
+    b = pi.read(PIN_B)
     state = (a << 1) | b
 
     if last_state is None:
@@ -165,9 +165,9 @@ def encoder_callback(gpio, level, tick):
 
     # Determine direction from state progression
     if (last_state, state) in ((0, 1), (1, 3), (3, 2), (2, 0)):
-        direction = 1     # CW
+        direction = -1     # CW
     elif (last_state, state) in ((0, 2), (2, 3), (3, 1), (1, 0)):
-        direction = -1    # CCW
+        direction = 1    # CCW
     else:
         last_state = state
         return  # bounce or invalid transition
