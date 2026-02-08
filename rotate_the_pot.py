@@ -46,7 +46,7 @@ def set_digipot_step(step_value):
     """Write data bytes to the currently selected MCP4131's SPI device handle."""
     if 0 <= step_value <= MAX_STEPS:
         h = handle_pot1 if selected_pot == 0 else handle_pot2
-        pi.spi_write(h, [0x00, step_value])
+        pi.spi_write(h, [0x00, step_value]) # this is for pot side one
         approx_ohms = step_to_ohms(step_value)
         print(
             f"Pot {selected_pot + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
