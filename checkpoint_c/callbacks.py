@@ -4,6 +4,7 @@ from ohms_steps import (
     ohms_to_step, step_to_ohms,
     MINIMUM_OHMS, MAXIMUM_OHMS,
     BUTTON_DEBOUNCE_US, DEFAULT_OHMS,
+    CONSTANT_OHMS, CONSTANT_LABELS,
 )
 
 # Shared state dict - set by setup_callbacks() from main.py
@@ -46,6 +47,64 @@ def menu_button_callback(gpio, level, tick):
         _s['button_last_tick'] = tick
         _s['selected_pot'] = _s['menu_selection']
         _s['isMainPage'] = False
+
+
+# --- Var/Const page callbacks ---
+
+def varconst_direction_callback(direction):
+    """Toggle between Variable and Constant on each encoder detent."""
+    _s['var_const_selection'] = 1 - _s['var_const_selection']
+
+    if _s['var_const_selection'] == 0:
+        _lcd.put_line(1, '> Variable')
+        _lcd.put_line(2, '  Constant')
+    else:
+        _lcd.put_line(1, '  Variable')
+        _lcd.put_line(2, '> Constant')
+
+
+def varconst_button_callback(gpio, level, tick):
+    """Select variable or constant mode."""
+    if level == 0:
+        if _s['button_last_tick'] is not None:
+            if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
+                return
+        _s['button_last_tick'] = tick
+        _s['isVarConstPage'] = False
+
+
+# --- Constant selection page callbacks ---
+
+def constant_direction_callback(direction):
+    """Cycle through constant resistance values (100, 1k, 5k, 10k)."""
+    _s['constant_selection'] = (_s['constant_selection'] + 1) % 4
+    label = CONSTANT_LABELS[_s['constant_selection']]
+    _lcd.put_line(1, f'Value: {label} Ohms')
+    _lcd.put_line(2, '')
+    _lcd.put_line(3, '')
+
+
+def constant_button_callback(gpio, level, tick):
+    """Set constant resistance on press, return to main on 3s hold."""
+    if level == 0:
+        if _s['button_last_tick'] is not None:
+            if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
+                return
+        _s['button_last_tick'] = tick
+        _s['button_press_tick'] = tick
+
+        ohms_value = CONSTANT_OHMS[_s['constant_selection']]
+        step = ohms_to_step(ohms_value)
+        _set_digipot_step(step)
+        label = CONSTANT_LABELS[_s['constant_selection']]
+        _lcd.put_line(2, 'Value set!')
+        _lcd.put_line(3, f'{label} Ohms -> Pot {_s["selected_pot"] + 1}')
+        print(f'Constant value set: {label} Ohms')
+    elif level == 1 and _s['button_press_tick'] is not None:
+        hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
+        _s['button_press_tick'] = None
+        if hold_time >= 3_000_000:
+            _s['isMainPage'] = True
 
 
 # --- Pot control callbacks ---

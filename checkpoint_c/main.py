@@ -4,11 +4,14 @@ import i2c_lcd
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
     DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
+    CONSTANT_LABELS,
 )
 from callbacks import (
     setup_callbacks, clear_callbacks,
     menu_direction_callback, menu_button_callback,
+    varconst_direction_callback, varconst_button_callback,
     pot_direction_callback, callback_set_digi,
+    constant_direction_callback, constant_button_callback,
     PIN_A, PIN_B,
 )
 import rotary_encoder
@@ -35,12 +38,14 @@ state = {
     'selected_pot': 0,
     'menu_selection': 0,
     'isMainPage': True,
+    'isVarConstPage': False,
+    'var_const_selection': 0,
+    'constant_selection': 0,
     'last_time': None,
     'button_press_tick': None,
     'button_last_tick': None,
     'spi_handle': spi_handle,
     'active_callbacks': [],
-    'var-set' : False
 }
 
 # Set up GPIO pins
@@ -61,8 +66,8 @@ setup_callbacks(state, pi, lcd)
 
 print("Starting...")
 try:
-    while state['isMainPage'] == True:
-        # main page
+    while True:
+        # === MAIN PAGE: Select Pot 1 or Pot 2 ===
         state['isMainPage'] = True
         state['button_last_tick'] = None
         clear_callbacks(state)
@@ -79,36 +84,67 @@ try:
 
         while state['isMainPage']:
             time.sleep(0.05)
-        #variable or constant
-        state['var-set'] = True
-        state['last_time'] = None
+
+        # === VAR/CONST PAGE: Variable or Constant ===
+        state['isVarConstPage'] = True
+        state['var_const_selection'] = 0
         state['button_last_tick'] = None
         clear_callbacks(state)
-        lcd.put_line(0, 'Do you want Variable or Constant Resistance Values?')
+
+        lcd.put_line(0, 'Resistance Type:')
         lcd.put_line(1, '> Variable')
-        lcd.put_line(2, '> Constant')
+        lcd.put_line(2, '  Constant')
         lcd.put_line(3, '')
 
-        # pot control page
-        state['isMainPage'] = False
-        state['last_time'] = None
-        state['button_last_tick'] = None
-        clear_callbacks(state)
-
-        state['ohms'] = DEFAULT_OHMS
-        step = ohms_to_step(state['ohms'])
-        lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
-        lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
-        lcd.put_line(2, '')
-        lcd.put_line(3, '')
-
-        decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, pot_direction_callback)
+        decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, varconst_direction_callback)
         cb_btn = pi.callback(
-            rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
+            rotaryEncoder_pin, pigpio.FALLING_EDGE, varconst_button_callback)
         state['active_callbacks'] = [decoder, cb_btn]
 
-        while not state['isMainPage']:
+        while state['isVarConstPage']:
             time.sleep(0.05)
+
+        if state['var_const_selection'] == 0:
+            # === VARIABLE CONTROL PAGE ===
+            state['isMainPage'] = False
+            state['last_time'] = None
+            state['button_last_tick'] = None
+            clear_callbacks(state)
+
+            state['ohms'] = DEFAULT_OHMS
+            step = ohms_to_step(state['ohms'])
+            lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
+            lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+            lcd.put_line(2, '')
+            lcd.put_line(3, '')
+
+            decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, pot_direction_callback)
+            cb_btn = pi.callback(
+                rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
+            state['active_callbacks'] = [decoder, cb_btn]
+
+            while not state['isMainPage']:
+                time.sleep(0.05)
+
+        else:
+            # === CONSTANT SELECTION PAGE ===
+            state['isMainPage'] = False
+            state['constant_selection'] = 0
+            state['button_last_tick'] = None
+            clear_callbacks(state)
+
+            lcd.put_line(0, f'Pot {state["selected_pot"] + 1} - Constant')
+            lcd.put_line(1, f'Value: {CONSTANT_LABELS[0]} Ohms')
+            lcd.put_line(2, '')
+            lcd.put_line(3, '')
+
+            decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, constant_direction_callback)
+            cb_btn = pi.callback(
+                rotaryEncoder_pin, pigpio.EITHER_EDGE, constant_button_callback)
+            state['active_callbacks'] = [decoder, cb_btn]
+
+            while not state['isMainPage']:
+                time.sleep(0.05)
 
 except KeyboardInterrupt:
     print("\nStopping...")

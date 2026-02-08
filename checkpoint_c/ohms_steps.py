@@ -5,6 +5,10 @@ MAX_STEPS = 128
 DEFAULT_OHMS = 5000
 BUTTON_DEBOUNCE_US = 200000    # 200ms button debounce
 
+# Constant resistance presets
+CONSTANT_OHMS = [100, 1000, 5000, 10000]
+CONSTANT_LABELS = ['100', '1k', '5k', '10k']
+
 # SPI settings
 SPI_CHANNEL = 0
 SPI_SPEED = 50000
