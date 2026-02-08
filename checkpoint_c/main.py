@@ -40,6 +40,7 @@ state = {
     'button_last_tick': None,
     'spi_handle': spi_handle,
     'active_callbacks': [],
+    'var-set' : False
 }
 
 # Set up GPIO pins
@@ -60,7 +61,7 @@ setup_callbacks(state, pi, lcd)
 
 print("Starting...")
 try:
-    while True:
+    while state['isMainPage'] == True:
         # main page
         state['isMainPage'] = True
         state['button_last_tick'] = None
@@ -78,6 +79,15 @@ try:
 
         while state['isMainPage']:
             time.sleep(0.05)
+        #variable or constant
+        state['var-set'] = True
+        state['last_time'] = None
+        state['button_last_tick'] = None
+        clear_callbacks(state)
+        lcd.put_line(0, 'Do you want Variable or Constant Resistance Values?')
+        lcd.put_line(1, '> Variable')
+        lcd.put_line(2, '> Constant')
+        lcd.put_line(3, '')
 
         # pot control page
         state['isMainPage'] = False
