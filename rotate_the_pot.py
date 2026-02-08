@@ -2,6 +2,7 @@ from pot_lcd import PotLCD
 import pigpio
 import time
 import sys
+# Import the actual Rotary class and constants
 from pigpio_encoder.rotary import Rotary
 
 sys.path.insert(0, 'checkpoint_c')
@@ -18,7 +19,6 @@ SPI_CHANNEL_1 = 1
 SPI_SPEED = 50000
 SPI_FLAGS = 0
 
-# Pin definitions
 PIN_A = 22
 PIN_B = 27
 BUTTON_PIN = 17
@@ -30,10 +30,6 @@ if not pi.connected:
 pot_lcd = PotLCD(pi, width=20)
 handle_pot1 = pi.spi_open(SPI_CHANNEL_0, SPI_SPEED, SPI_FLAGS)
 handle_pot2 = pi.spi_open(SPI_CHANNEL_1, SPI_SPEED, SPI_FLAGS)
-
-# Initialize the Encoder via the library
-# We provide the pins here; callbacks will be assigned later
-encoder = Rotary(pi, PIN_A, PIN_B, BUTTON_PIN)
 
 # --- Logic Helpers ---
 
@@ -47,7 +43,7 @@ def step_to_ohms(step):
     return (step / MAX_STEPS) * MAXIMUM_OHMS
 
 
-def set_digipot_step(step_value):
+def set_digipot_step(step_value, selected_pot):
     if 0 <= step_value <= MAX_STEPS:
         h = handle_pot1 if selected_pot == 0 else handle_pot2
         pi.spi_write(h, [0x00, step_value])
@@ -55,100 +51,94 @@ def set_digipot_step(step_value):
         print(
             f"Pot {selected_pot + 1} | Step: {step_value} | Approx: {approx_ohms:.1f} Ohms")
 
-# --- State Variables ---
 
-
+# --- Global State ---
 ohms = DEFAULT_OHMS
 selected_pot = 0
 menu_selection = 0
-isMainPage = True
+is_main_page = True
 
-# --- Callback Functions ---
+# --- Unified Callback ---
 
 
-def on_menu_rotate(direction):
-    """Callback for Main Page: Switch between Pot 1 and Pot 2."""
-    global menu_selection
-    # direction is 1 (CW) or -1 (CCW)
-    if direction == 1:
-        menu_selection = 1
+def encoder_event_callback(event):
+    """
+    The pigpio-encoder library calls this with an 'event' integer.
+    We check this against the library's internal constants.
+    """
+    global menu_selection, is_main_page, selected_pot, ohms
+
+    # --- Main Page Logic ---
+    if is_main_page:
+        if event == Rotary.ROT_CW:
+            menu_selection = 1
+            pot_lcd.request_main_page_update(menu_selection)
+        elif event == Rotary.ROT_CCW:
+            menu_selection = 0
+            pot_lcd.request_main_page_update(menu_selection)
+        elif event == Rotary.SW_PRESS:
+            selected_pot = menu_selection
+            is_main_page = False
+
+    # --- Pot Control Page Logic ---
     else:
-        menu_selection = 0
-    pot_lcd.request_main_page_update(menu_selection)
+        if event == Rotary.ROT_CW:
+            change_ohms(1)
+        elif event == Rotary.ROT_CCW:
+            change_ohms(-1)
+        elif event == Rotary.SW_PRESS:
+            step = ohms_to_step(ohms)
+            set_digipot_step(step, selected_pot)
+            pot_lcd.request_confirmation(selected_pot)
+        elif event == Rotary.SW_LONG_PRESS:
+            # Return to main
+            ohms = DEFAULT_OHMS
+            is_main_page = True
 
 
-def on_menu_press():
-    """Callback for Main Page: Select the pot and switch states."""
-    global isMainPage, selected_pot
-    selected_pot = menu_selection
-    isMainPage = False
-
-
-def on_pot_rotate(direction):
-    """Callback for Pot Page: Adjust Ohm value."""
+def change_ohms(direction):
     global ohms
-    # Logic: small movements = 10, faster or consistent movements = 100
-    # (Note: pigpio-encoder provides raw direction; you can add speed logic if needed)
+    # Standard increment
     change = 100
-    resulting_ohms = ohms + (change * direction)
-
-    if MINIMUM_OHMS <= resulting_ohms <= MAXIMUM_OHMS:
-        ohms = resulting_ohms
+    new_val = ohms + (change * direction)
+    if MINIMUM_OHMS <= new_val <= MAXIMUM_OHMS:
+        ohms = new_val
         step = ohms_to_step(ohms)
         pot_lcd.request_pot_page_update(step_to_ohms(step), selected_pot)
 
-
-def on_pot_press():
-    """Callback for Pot Page: Set value on click."""
-    step = ohms_to_step(ohms)
-    set_digipot_step(step)
-    pot_lcd.request_confirmation(selected_pot)
+# --- Initialization ---
 
 
-def on_pot_long_press():
-    """Callback for Pot Page: Return to main on 3s hold."""
-    global isMainPage, ohms
-    ohms = DEFAULT_OHMS
-    isMainPage = True
+# Create the encoder object
+my_encoder = Rotary(pi, PIN_A, PIN_B, BUTTON_PIN)
 
-# --- Main loop ---
+# The library uses a single callback function for all events
+my_encoder.setup_rotary(callback=encoder_event_callback)
+my_encoder.setup_switch(callback=encoder_event_callback,
+                        long_press=True, long_press_t=3000)
 
+# --- Main Loop ---
 
-print("Starting...")
+print("System Ready...")
 try:
+    # Initialize the first screen
+    pot_lcd.draw_main_page()
+
+    current_state_was_main = True
+
     while True:
-        # --- State: Main Page ---
-        isMainPage = True
-        pot_lcd.draw_main_page()
+        # Check if we just transitioned states to update the LCD base layer
+        if is_main_page != current_state_was_main:
+            if is_main_page:
+                pot_lcd.draw_main_page()
+            else:
+                step = ohms_to_step(ohms)
+                pot_lcd.request_pot_page_update(
+                    step_to_ohms(step), selected_pot)
+            current_state_was_main = is_main_page
 
-        # Configure encoder for menu navigation
-        encoder.setup(
-            rotary_callback=on_menu_rotate,
-            sw_callback=on_menu_press
-        )
-
-        while isMainPage:
-            pot_lcd.process_updates()
-            time.sleep(0.05)
-
-        # --- State: Pot Control Page ---
-        isMainPage = False
-        ohms = DEFAULT_OHMS
-        step = ohms_to_step(ohms)
-        pot_lcd.request_pot_page_update(step_to_ohms(step), selected_pot)
-
-        # Configure encoder for value adjustment
-        # Setting long_press_duration to 3000ms (3 seconds)
-        encoder.setup(
-            rotary_callback=on_pot_rotate,
-            sw_callback=on_pot_press,
-            long_press_callback=on_pot_long_press,
-            long_press_t=3000
-        )
-
-        while not isMainPage:
-            pot_lcd.process_updates()
-            time.sleep(0.05)
+        pot_lcd.process_updates()
+        time.sleep(0.05)
 
 except KeyboardInterrupt:
     print("\nStopping...")
