@@ -6,7 +6,7 @@ import i2c_lcd
 MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
-DEFAULT_OHMS = 100
+DEFAULT_OHMS = 5000
 
 # Set up SPI
 SPI_CHANNEL = 0
@@ -75,7 +75,7 @@ pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
 
 pi.set_glitch_filter(PIN_A, 500)
-pi.set_glitch_filter(PIN_B, 500)
+pi.set_glitch_filter(PIN_B, 1000)
 
 # when rotary encoder is set, i.e changes state (pulled down) this function is called to set the digi pot
 
