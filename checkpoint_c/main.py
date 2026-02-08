@@ -69,6 +69,7 @@ try:
     while True:
         # === MAIN PAGE: Select Pot 1 or Pot 2 ===
         state['isMainPage'] = True
+        state['menu_selection'] = 0
         state['button_last_tick'] = None
         clear_callbacks(state)
 

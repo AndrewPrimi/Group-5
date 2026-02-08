@@ -104,6 +104,7 @@ def constant_button_callback(gpio, level, tick):
         hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
         _s['button_press_tick'] = None
         if hold_time >= 3_000_000:
+            _set_digipot_step(ohms_to_step(DEFAULT_OHMS))
             _s['isMainPage'] = True
 
 
@@ -128,6 +129,7 @@ def callback_set_digi(gpio, level, tick):
         _s['button_press_tick'] = None
         if hold_time >= 3_000_000:  # 3 seconds
             _s['ohms'] = DEFAULT_OHMS
+            _set_digipot_step(ohms_to_step(DEFAULT_OHMS))
             _s['isMainPage'] = True
 
 
