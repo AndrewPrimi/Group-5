@@ -221,7 +221,7 @@ try:
 
         draw_main_page()
 
-        cb_enc = pi.callback(PIN_A, pigpio.RISING_EDGE, menu_encoder_callback)
+        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, menu_encoder_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
         active_callbacks = [cb_enc, cb_btn]
@@ -237,8 +237,7 @@ try:
         ohms = DEFAULT_OHMS
         set_lcd()
 
-        cb_enc1 = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
-        cb_enc2 = pi.callback(PIN_B, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
         active_callbacks = [cb_enc, cb_btn]
