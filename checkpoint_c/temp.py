@@ -46,7 +46,6 @@ def set_digipot_step(step_value):
 
 
 # wiper functions
-
 # Pin A connected to CLK, Pin B connected to DT
 PIN_A = 22
 PIN_B = 27
@@ -62,6 +61,9 @@ pi.set_pull_up_down(PIN_A, pigpio.PUD_UP)
 pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 # set_mode pigpio.OUTPUT s
 
+pi.set_glitch_filter(PIN_A, 1000)
+pi.set_glitch_filter(PIN_B, 1000)
+
 
 def encoder_callback(gpio, level, tick):
     global last_tick, ohms
@@ -75,7 +77,7 @@ def encoder_callback(gpio, level, tick):
         dt = pigpio.tickDiff(last_tick, tick)  # microseconds
 
         # Debounce
-        if dt < 2000:
+        if dt < 1500:
             last_tick = tick
             return
 
@@ -84,29 +86,22 @@ def encoder_callback(gpio, level, tick):
 
         # -1 = CCW, 1 = CW
         print(f"level is currently: {level}")
-        if level == 1:
-            if (pi.read(PIN_B) == 0):
-                direction = 1
-                print("CW")
-            else:
-                direction = -1
-                print("CCW")
-                if (pi.read(PIN_B) == 0):
-                    direction = -1
-                    print("CCW")
-                else:
-                    direction = 1
-                    print("CW")
+        if pi.read(PIN_B) == 0:
+            direction = 1
+            print("CW")
+        else:
+            direction = -1
+            print("CCW")
 
-        detector_and_change_steps(direction, speed)
+        change_steps(direction, speed)
 
     last_tick = tick
 
 
-def detector_and_change_steps(direction, speed):
+def change_steps(direction, speed):
     global ohms
 
-    if speed < 1:
+    if speed < 10:
         change = 10
     else:
         change = 100
@@ -128,7 +123,7 @@ def detector_and_change_steps(direction, speed):
 print("Entering try block.")
 try:
     ohms = DEFAULT_OHMS
-    cb = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+    cb = pi.callback(PIN_A, pigpio.RISING_EDGE, encoder_callback)
 
     while True:
         print(pi.read(PIN_A), pi.read(PIN_B))
