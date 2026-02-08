@@ -74,8 +74,9 @@ def callback_set_digi(gpio, level, tick):
 
 def pot_direction_callback(direction):
     """Handle rotary encoder rotation on the pot control page.
-    CW (+1) increases ohms, CCW (-1) decreases ohms.
+    CW increases ohms, CCW decreases ohms.
     """
+    direction = -direction  # flip to match encoder wiring
     now = time.time()
     if _s['last_time'] is not None:
         dt = now - _s['last_time']

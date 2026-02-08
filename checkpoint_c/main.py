@@ -50,9 +50,7 @@ pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 
-# Hardware glitch filters
-pi.set_glitch_filter(PIN_A, 10000)
-pi.set_glitch_filter(PIN_B, 10000)
+# Hardware glitch filter on button only (encoder handled by decoder state machine)
 pi.set_glitch_filter(rotaryEncoder_pin, 10000)
 
 # Give callbacks access to shared state and LCD
