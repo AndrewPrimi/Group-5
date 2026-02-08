@@ -1,7 +1,13 @@
 import pigpio
 import time
+<<<<<<< HEAD
 import i2c_lcd
 import pigpio_encoder
+=======
+import sys
+sys.path.insert(0, 'checkpoint_c')
+from pot_lcd import PotLCD
+>>>>>>> 3c7c3e904cc356deab32fe04918f0d06cc600394
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
 MINIMUM_OHMS = 40
@@ -9,6 +15,11 @@ MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
 # SPEED_LIMIT = 100
+
+# Debounce constants (microseconds)
+ENCODER_DEBOUNCE_US = 10000    # 10ms encoder debounce
+MENU_DEBOUNCE_US = 15000       # 15ms menu encoder debounce
+BUTTON_DEBOUNCE_US = 200000    # 200ms button debounce
 
 # Set up SPI
 SPI_CHANNEL_0 = 0
@@ -18,11 +29,12 @@ SPI_FLAGS = 0
 
 pi = pigpio.pi()
 
-lcd = i2c_lcd.lcd(pi, width=20)
-
 # Check if connection was successful
 if not pi.connected:
     exit()
+
+# LCD display handler
+pot_lcd = PotLCD(pi, width=20)
 
 # Open SPI channel handles for both pots
 handle_pot1 = pi.spi_open(SPI_CHANNEL_0, SPI_SPEED, SPI_FLAGS)
@@ -47,34 +59,12 @@ def set_digipot_step(step_value):
     """Write data bytes to the currently selected MCP4131's SPI device handle."""
     if 0 <= step_value <= MAX_STEPS:
         h = handle_pot1 if selected_pot == 0 else handle_pot2
-        pi.spi_write(h, [0x00, step_value])  # this is for pot side one
+        pi.spi_write(h, [0x00, step_value])
         approx_ohms = step_to_ohms(step_value)
         print(
             f"Pot {selected_pot + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
     else:
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
-
-
-def set_lcd():
-    """Update LCD with current ohms value for the active pot."""
-    global ohms
-    step = ohms_to_step(ohms)
-    lcd.put_line(0, f'Pot {selected_pot + 1}')
-    lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
-    lcd.put_line(2, '')
-    lcd.put_line(3, '')
-
-
-def draw_main_page():
-    """Draw main page with < indicator on the selected pot."""
-    lcd.put_line(0, 'Select a Pot:')
-    if menu_selection == 0:
-        lcd.put_line(1, '< Pot 1')
-        lcd.put_line(2, '  Pot 2')
-    else:
-        lcd.put_line(1, '  Pot 1')
-        lcd.put_line(2, '< Pot 2')
-    lcd.put_line(3, '')
 
 
 # Pin A connected to CLK, Pin B connected to DT
@@ -89,6 +79,7 @@ selected_pot = 0
 menu_selection = 0
 isMainPage = True
 button_press_tick = None
+button_last_tick = None
 
 pi.set_mode(PIN_A, pigpio.INPUT)
 pi.set_mode(PIN_B, pigpio.INPUT)
@@ -106,7 +97,7 @@ def menu_encoder_callback(gpio, level, tick):
 
     if last_tick is not None:
         dt = pigpio.tickDiff(last_tick, tick)
-        if dt < 5000:
+        if dt < MENU_DEBOUNCE_US:
             last_tick = tick
             return
 
@@ -115,15 +106,21 @@ def menu_encoder_callback(gpio, level, tick):
         else:
             menu_selection = 0
 
-        draw_main_page()
+        # Set flag instead of writing LCD directly
+        pot_lcd.request_main_page_update(menu_selection)
 
     last_tick = tick
 
 
 def menu_button_callback(gpio, level, tick):
     """Select a pot from the main page when button is pressed."""
-    global isMainPage, selected_pot
+    global isMainPage, selected_pot, button_last_tick
     if level == 0:
+        # Debounce button
+        if button_last_tick is not None:
+            if pigpio.tickDiff(button_last_tick, tick) < BUTTON_DEBOUNCE_US:
+                return
+        button_last_tick = tick
         selected_pot = menu_selection
         isMainPage = False
 
@@ -132,14 +129,20 @@ def menu_button_callback(gpio, level, tick):
 
 def callback_set_digi(gpio, level, tick):
     """When button is pressed, set the digi pot. Track press time for long hold."""
-    global ohms, button_press_tick
+    global ohms, button_press_tick, button_last_tick
     if level == 0:
+        # Debounce button
+        if button_last_tick is not None:
+            if pigpio.tickDiff(button_last_tick, tick) < BUTTON_DEBOUNCE_US:
+                return
+        button_last_tick = tick
+
         # Button pressed - record the tick for long-press detection
         button_press_tick = tick
         step = ohms_to_step(ohms)
         set_digipot_step(step)
-        lcd.put_line(2, 'Value set!')
-        lcd.put_line(3, f'Pot {selected_pot + 1} updated')
+        # Set flag instead of writing LCD directly
+        pot_lcd.request_confirmation(selected_pot)
         print('Button pressed! Value sent to digi pot.')
     elif level == 1 and button_press_tick is not None:
         # Button released - check if held for 3 seconds
@@ -149,6 +152,33 @@ def callback_set_digi(gpio, level, tick):
             return_to_main()
 
 
+<<<<<<< HEAD
+=======
+def encoder_callback(gpio, level, tick):
+    global last_tick, ohms
+
+    if last_tick is not None:
+        dt = pigpio.tickDiff(last_tick, tick)
+
+        # Debounce
+        if dt < ENCODER_DEBOUNCE_US:
+            last_tick = tick
+            return
+
+        speed = min(1_000_000 / dt, 1000)  # pulses per second
+
+        if pi.read(PIN_B) == 0:
+            direction = 1
+        else:
+            direction = -1
+
+        if speed <= SPEED_LIMIT:
+            change_steps(direction, speed)
+
+    last_tick = tick
+
+
+>>>>>>> 3c7c3e904cc356deab32fe04918f0d06cc600394
 def change_steps(direction, speed):
     global ohms
 
@@ -161,7 +191,9 @@ def change_steps(direction, speed):
     if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
         ohms = ohms + change * direction
         print(f"Current Ohms: {ohms}")
-        set_lcd()
+        # Set flag instead of writing LCD directly
+        step = ohms_to_step(ohms)
+        pot_lcd.request_pot_page_update(step_to_ohms(step), selected_pot)
     else:
         print("ohm value is out of range...")
 
@@ -189,6 +221,7 @@ def return_to_main():
 def on_rotate(direction, dt):
     global ohms
 
+<<<<<<< HEAD
     speed = 1_000_000 / dt  # detents/sec
 
     change = 10 if speed < 100 else 100
@@ -197,8 +230,41 @@ def on_rotate(direction, dt):
     if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
         ohms = new_ohms
         set_lcd()
+=======
+print("Starting...")
+try:
+    while True:
+        # main page
+        isMainPage = True
+        last_tick = None
+        button_last_tick = None
+        clear_callbacks()
+
+        pot_lcd.draw_main_page()
+
+        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, menu_encoder_callback)
+        cb_btn = pi.callback(
+            rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
+        active_callbacks = [cb_enc, cb_btn]
+
+        while isMainPage:
+            pot_lcd.process_updates()
+            time.sleep(0.05)
+
+        # pot control page
+        isMainPage = False
+        last_tick = None
+        button_last_tick = None
+        clear_callbacks()
+
+        ohms = DEFAULT_OHMS
+        step = ohms_to_step(ohms)
+        pot_lcd.request_pot_page_update(step_to_ohms(step), selected_pot)
+        pot_lcd.process_updates()
+>>>>>>> 3c7c3e904cc356deab32fe04918f0d06cc600394
 
 
+<<<<<<< HEAD
 class RotaryEncoder:
     def __init__(self, pi, gpioA, gpioB, callback):
         self.pi = pi
@@ -288,3 +354,16 @@ active_callbacks = [cb_btn]
 
 while not isMainPage:
     time.sleep(0.1)
+=======
+        while not isMainPage:
+            pot_lcd.process_updates()
+            time.sleep(0.05)
+
+except KeyboardInterrupt:
+    print("\nStopping...")
+    clear_callbacks()
+    pot_lcd.close()
+    pi.spi_close(handle_pot1)
+    pi.spi_close(handle_pot2)
+    pi.stop()
+>>>>>>> 3c7c3e904cc356deab32fe04918f0d06cc600394

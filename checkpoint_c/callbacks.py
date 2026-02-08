@@ -1,46 +1,39 @@
 import pigpio
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
-    MINIMUM_OHMS, MAXIMUM_OHMS,
-    BUTTON_DEBOUNCE_US,
-    DEFAULT_OHMS,
+    MINIMUM_OHMS, MAXIMUM_OHMS, SPEED_LIMIT,
+    BUTTON_DEBOUNCE_US, DEFAULT_OHMS,
 )
 
 # Shared state dict - set by setup_callbacks() from main.py
 _s = None
 _pi = None
-_pot_lcd = None
+_lcd = None
 
 # Pin assignments
 PIN_A = 22
 PIN_B = 27
 
-
-def setup_callbacks(state, pi, pot_lcd):
-    """Initialize callbacks with shared state from main.py.
-
-    state dict must contain:
-        - ohms, selected_pot, menu_selection
-        - isMainPage, last_tick, button_press_tick, button_last_tick
-        - handle_pot1, handle_pot2
-        - active_callbacks
-    """
-    global _s, _pi, _pot_lcd
+def setup_callbacks(state, pi, lcd):
+    """Give callbacks access to shared state and LCD."""
+    global _s, _pi, _lcd
     _s = state
     _pi = pi
-    _pot_lcd = pot_lcd
+    _lcd = lcd
 
 
 # --- Main page callbacks ---
 
-def menu_encoder_callback(gpio, level, tick):
-    """Rotate between Pot 1 and Pot 2 on the main page."""
-    # Use direction so duplicate edges don't cancel out
-    if _pi.read(PIN_B) == 0:
-        _s['menu_selection'] = 1   # CW -> Pot 2
+def menu_direction_callback(direction):
+    """Toggle between Pot 1 and Pot 2 on each encoder detent."""
+    _s['menu_selection'] = 1 - _s['menu_selection']
+
+    if _s['menu_selection'] == 0:
+        _lcd.put_line(1, '> Pot 1')
+        _lcd.put_line(2, '  Pot 2')
     else:
-        _s['menu_selection'] = 0   # CCW -> Pot 1
-    _pot_lcd.request_main_page_update(_s['menu_selection'])
+        _lcd.put_line(1, '  Pot 1')
+        _lcd.put_line(2, '> Pot 2')
 
 
 def menu_button_callback(gpio, level, tick):
@@ -67,7 +60,8 @@ def callback_set_digi(gpio, level, tick):
         _s['button_press_tick'] = tick
         step = ohms_to_step(_s['ohms'])
         _set_digipot_step(step)
-        _pot_lcd.request_confirmation(_s['selected_pot'])
+        _lcd.put_line(2, 'Value set!')
+        _lcd.put_line(3, f'Pot {_s["selected_pot"] + 1} updated')
         print('Button pressed! Value sent to digi pot.')
     elif level == 1 and _s['button_press_tick'] is not None:
         hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
@@ -84,28 +78,14 @@ def encoder_callback(gpio, level, tick):
         speed = min(1_000_000 / dt, 1000)
 
         if _pi.read(PIN_B) == 0:
-            direction = -1  # temp swap
+            direction = -1
         else:
-            direction = 1  # temp swap
+            direction = 1
 
-        _change_steps(direction, speed)
+        if speed <= SPEED_LIMIT:
+            _change_steps(direction, speed)
 
     _s['last_tick'] = tick
-
-
-# --- Helper functions ---
-
-def _set_digipot_step(step_value):
-    """Write data bytes to the currently selected MCP4131."""
-    from ohms_steps import MAX_STEPS
-    if 0 <= step_value <= MAX_STEPS:
-        h = _s['handle_pot1'] if _s['selected_pot'] == 0 else _s['handle_pot2']
-        _pi.spi_write(h, [0x00, step_value])
-        approx_ohms = step_to_ohms(step_value)
-        print(
-            f"Pot {_s['selected_pot'] + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
-    else:
-        print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
 def _change_steps(direction, speed):
@@ -116,14 +96,29 @@ def _change_steps(direction, speed):
         change = 100
 
     resulting_ohms = _s['ohms'] + change * direction
-    if resulting_ohms >= MINIMUM_OHMS and resulting_ohms <= MAXIMUM_OHMS:
+    if MINIMUM_OHMS <= resulting_ohms <= MAXIMUM_OHMS:
         _s['ohms'] = resulting_ohms
-        print(f"Current Ohms: {_s['ohms']}")
         step = ohms_to_step(_s['ohms'])
-        _pot_lcd.request_pot_page_update(
-            step_to_ohms(step), _s['selected_pot'])
+        _lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+        print(f"Current Ohms: {_s['ohms']}")
     else:
         print("ohm value is out of range...")
+
+
+# --- Helper functions ---
+
+def _set_digipot_step(step_value):
+    """Write data bytes to the selected wiper on the MCP4231."""
+    from ohms_steps import MAX_STEPS
+    if 0 <= step_value <= MAX_STEPS:
+        # MCP4231: 0x00 = Wiper 0 (Pot 1), 0x10 = Wiper 1 (Pot 2)
+        cmd = 0x00 if _s['selected_pot'] == 0 else 0x10
+        _pi.spi_write(_s['spi_handle'], [cmd, step_value])
+        approx_ohms = step_to_ohms(step_value)
+        print(
+            f"Pot {_s['selected_pot'] + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
+    else:
+        print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
 
 
 def clear_callbacks(state):
