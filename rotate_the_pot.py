@@ -7,6 +7,7 @@ MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
+SPEED_LIMIT = 100
 
 # Set up SPI
 SPI_CHANNEL_0 = 0
@@ -161,13 +162,17 @@ def encoder_callback(gpio, level, tick):
         speed = min(1_000_000 / dt, 1000)
         # Set dt to 1000 to clamp the speed
         speed = min(1_000_000 / dt, 1000)  # pulses per second
+        print(f"speed: {speed}")
 
         if pi.read(PIN_B) == 0:
             direction = 1
+            print(f"CW")
         else:
             direction = -1
+            print(f"CW")
 
-        change_steps(direction, speed)
+        if speed <= SPEED_LIMIT:
+            change_steps(direction, speed)
 
     last_tick = tick
 
