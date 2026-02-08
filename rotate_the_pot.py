@@ -1,13 +1,14 @@
 import pigpio
 import time
 import i2c_lcd
+import pigpio_encoder
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
 MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
-SPEED_LIMIT = 100
+# SPEED_LIMIT = 100
 
 # Set up SPI
 SPI_CHANNEL_0 = 0
@@ -148,53 +149,6 @@ def callback_set_digi(gpio, level, tick):
             return_to_main()
 
 
-last_state = None
-last_step_tick = None
-
-
-def encoder_callback(gpio, level, tick):
-    global last_state, last_step_tick, ohms
-
-    a = pi.read(PIN_A)
-    b = pi.read(PIN_B)
-    state = (a << 1) | b
-
-    if last_state is None:
-        last_state = state
-        return
-
-    # Determine direction from state progression
-    if (last_state, state) in ((0, 1), (1, 3), (3, 2), (2, 0)):
-        direction = -1     # CW
-    elif (last_state, state) in ((0, 2), (2, 3), (3, 1), (1, 0)):
-        direction = 1    # CCW
-    else:
-        last_state = state
-        return  # bounce or invalid transition
-
-    last_state = state
-
-    # Only act once per detent (state == 00)
-    if state != 0:
-        return
-
-    if last_step_tick is None:
-        last_step_tick = tick
-        return
-
-    dt = pigpio.tickDiff(last_step_tick, tick)
-    last_step_tick = tick
-
-    speed = 1_000_000 / dt
-
-    change = 10 if speed < SPEED_LIMIT else 100
-
-    new_ohms = ohms + direction * change
-    if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
-        ohms = new_ohms
-        set_lcd()
-
-
 def change_steps(direction, speed):
     global ohms
 
@@ -232,49 +186,105 @@ def return_to_main():
     isMainPage = True
 
 
-# --- Main loop ---
+def on_rotate(direction, dt):
+    global ohms
 
-print("Starting...")
-try:
-    while True:
-        # main page
-        isMainPage = True
-        last_tick = None
-        clear_callbacks()
+    speed = 1_000_000 / dt  # detents/sec
 
-        draw_main_page()
+    change = 10 if speed < 100 else 100
 
-        cb_enc_a = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
-        cb_enc_b = pi.callback(PIN_B, pigpio.EITHER_EDGE, encoder_callback)
-        # cb_enc_b = pi.callback(PIN_B, pigpio.FALLING_EDGE,
-        # menu_encoder_callback)
-        cb_btn = pi.callback(
-            rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
-        active_callbacks = [cb_enc, cb_btn]
-
-        while isMainPage:
-            time.sleep(0.1)
-
-        # pot control page
-        isMainPage = False
-        last_tick = None
-        clear_callbacks()
-
-        ohms = DEFAULT_OHMS
+    new_ohms = ohms + direction * change
+    if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
+        ohms = new_ohms
         set_lcd()
 
-        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
-        cb_btn = pi.callback(
-            rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
-        active_callbacks = [cb_enc, cb_btn]
 
-        while not isMainPage:
-            time.sleep(0.1)
+class RotaryEncoder:
+    def __init__(self, pi, gpioA, gpioB, callback):
+        self.pi = pi
+        self.gpioA = gpioA
+        self.gpioB = gpioB
+        self.callback = callback
 
-except KeyboardInterrupt:
-    print("\nStopping...")
-    clear_callbacks()
-    lcd.close()
-    pi.spi_close(handle_pot1)
-    pi.spi_close(handle_pot2)
-    pi.stop()
+        self.last_state = 0
+        self.last_tick = None
+
+        self.pi.set_mode(gpioA, pigpio.INPUT)
+        self.pi.set_mode(gpioB, pigpio.INPUT)
+        self.pi.set_pull_up_down(gpioA, pigpio.PUD_UP)
+        self.pi.set_pull_up_down(gpioB, pigpio.PUD_UP)
+
+        self.cbA = self.pi.callback(gpioA, pigpio.EITHER_EDGE, self._pulse)
+        self.cbB = self.pi.callback(gpioB, pigpio.EITHER_EDGE, self._pulse)
+
+    def _pulse(self, gpio, level, tick):
+        a = self.pi.read(self.gpioA)
+        b = self.pi.read(self.gpioB)
+        state = (a << 1) | b
+
+        delta = {
+            (0, 1):  1,
+            (1, 3):  1,
+            (3, 2):  1,
+            (2, 0):  1,
+            (0, 2): -1,
+            (2, 3): -1,
+            (3, 1): -1,
+            (1, 0): -1,
+        }.get((self.last_state, state), 0)
+
+        self.last_state = state
+
+        # Only trigger on full detent
+        if delta == 0 or state != 0:
+            return
+
+        if self.last_tick is None:
+            self.last_tick = tick
+            return
+
+        dt = pigpio.tickDiff(self.last_tick, tick)
+        self.last_tick = tick
+
+        self.callback(delta, dt)
+
+    def cancel(self):
+        self.cbA.cancel()
+        self.cbB.cancel()
+
+    def on_rotate(direction, dt):
+        global ohms
+
+        speed = 1_000_000 / dt  # detents per second
+
+        change = 10 if speed < 100 else 100
+
+        new_ohms = ohms + direction * change
+        if MINIMUM_OHMS <= new_ohms <= MAXIMUM_OHMS:
+            ohms = new_ohms
+            set_lcd()
+
+
+encoder = None
+active_callbacks = []
+
+
+def clear_callbacks():
+    global encoder, active_callbacks
+    if encoder:
+        encoder.cancel()
+        encoder = None
+    for c in active_callbacks:
+        c.cancel()
+    active_callbacks = []
+
+
+    # --- Pot control page ---
+clear_callbacks()
+
+encoder = RotaryEncoder(pi, PIN_A, PIN_B, on_rotate)
+cb_btn = pi.callback(rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
+active_callbacks = [cb_btn]
+
+while not isMainPage:
+    time.sleep(0.1)
