@@ -1,9 +1,9 @@
 import pigpio
 import time
-from pot_lcd import PotLCD
+import i2c_lcd
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
-    DEFAULT_OHMS, SPI_CHANNEL_0, SPI_CHANNEL_1, SPI_SPEED, SPI_FLAGS,
+    DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
 )
 from callbacks import (
     setup_callbacks, clear_callbacks,
@@ -21,16 +21,14 @@ pi = pigpio.pi()
 if not pi.connected:
     exit()
 
-# LCD display handler
-pot_lcd = PotLCD(pi, width=20)
+# LCD
+lcd = i2c_lcd.lcd(pi, width=20)
 
-# Open SPI channel handles for both pots
-handle_pot1 = pi.spi_open(SPI_CHANNEL_0, SPI_SPEED, SPI_FLAGS)
-handle_pot2 = pi.spi_open(SPI_CHANNEL_1, SPI_SPEED, SPI_FLAGS)
-print(f"Pot 1 handle: {handle_pot1}")
-print(f"Pot 2 handle: {handle_pot2}")
+# Open SPI handle for MCP4231 (dual pot on one chip)
+spi_handle = pi.spi_open(SPI_CHANNEL, SPI_SPEED, SPI_FLAGS)
+print(f"SPI handle: {spi_handle}")
 
-# Shared state - all mutable state lives here
+# Shared state
 state = {
     'ohms': DEFAULT_OHMS,
     'selected_pot': 0,
@@ -39,8 +37,7 @@ state = {
     'last_tick': None,
     'button_press_tick': None,
     'button_last_tick': None,
-    'handle_pot1': handle_pot1,
-    'handle_pot2': handle_pot2,
+    'spi_handle': spi_handle,
     'active_callbacks': [],
 }
 
@@ -52,13 +49,13 @@ pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 
-# Hardware glitch filters - pigpio daemon filters bounces before callbacks fire
-pi.set_glitch_filter(PIN_A, 5000)            # 5ms glitch filter on encoder CLK
-pi.set_glitch_filter(PIN_B, 5000)            # 5ms glitch filter on encoder DT
-pi.set_glitch_filter(rotaryEncoder_pin, 5000) # 5ms glitch filter on button
+# Hardware glitch filters
+pi.set_glitch_filter(PIN_A, 10000)
+pi.set_glitch_filter(PIN_B, 10000)
+pi.set_glitch_filter(rotaryEncoder_pin, 10000)
 
-# Give callbacks access to shared state
-setup_callbacks(state, pi, pot_lcd)
+# Give callbacks access to shared state and LCD
+setup_callbacks(state, pi, lcd)
 
 # --- Main loop ---
 
@@ -67,11 +64,13 @@ try:
     while True:
         # main page
         state['isMainPage'] = True
-        state['last_tick'] = None
         state['button_last_tick'] = None
         clear_callbacks(state)
 
-        pot_lcd.draw_main_page()
+        lcd.put_line(0, 'Select a Pot:')
+        lcd.put_line(1, '> Pot 1')
+        lcd.put_line(2, '  Pot 2')
+        lcd.put_line(3, '')
 
         cb_enc = pi.callback(PIN_A, pigpio.FALLING_EDGE, menu_encoder_callback)
         cb_btn = pi.callback(
@@ -79,7 +78,6 @@ try:
         state['active_callbacks'] = [cb_enc, cb_btn]
 
         while state['isMainPage']:
-            pot_lcd.process_updates()
             time.sleep(0.05)
 
         # pot control page
@@ -90,8 +88,10 @@ try:
 
         state['ohms'] = DEFAULT_OHMS
         step = ohms_to_step(state['ohms'])
-        pot_lcd.request_pot_page_update(step_to_ohms(step), state['selected_pot'])
-        pot_lcd.process_updates()
+        lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
+        lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+        lcd.put_line(2, '')
+        lcd.put_line(3, '')
 
         cb_enc = pi.callback(PIN_A, pigpio.FALLING_EDGE, encoder_callback)
         cb_btn = pi.callback(
@@ -99,13 +99,11 @@ try:
         state['active_callbacks'] = [cb_enc, cb_btn]
 
         while not state['isMainPage']:
-            pot_lcd.process_updates()
             time.sleep(0.05)
 
 except KeyboardInterrupt:
     print("\nStopping...")
     clear_callbacks(state)
-    pot_lcd.close()
-    pi.spi_close(handle_pot1)
-    pi.spi_close(handle_pot2)
+    lcd.close()
+    pi.spi_close(spi_handle)
     pi.stop()
