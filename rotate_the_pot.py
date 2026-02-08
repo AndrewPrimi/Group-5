@@ -1,136 +1,158 @@
+from pot_lcd import PotLCD
 import pigpio
 import time
-from pigpio_encoder import encoder
+import sys
+from pigpio_encoder.rotary import Rotary
 
-# =======================
+sys.path.insert(0, 'checkpoint_c')
+
 # Constants
-# =======================
-
 MINIMUM_OHMS = 40
 MAXIMUM_OHMS = 11000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
 
-# Speed thresholds (detents/sec)
-SLOW_THRESHOLD = 40
+# SPI Setup
+SPI_CHANNEL_0 = 0
+SPI_CHANNEL_1 = 1
+SPI_SPEED = 50000
+SPI_FLAGS = 0
 
-# GPIO pins
-PIN_A = 22   # CLK
-PIN_B = 27   # DT
+# Pin definitions
+PIN_A = 22
+PIN_B = 27
 BUTTON_PIN = 17
 
-# =======================
-# Helpers
-# =======================
+pi = pigpio.pi()
+if not pi.connected:
+    exit()
+
+pot_lcd = PotLCD(pi, width=20)
+handle_pot1 = pi.spi_open(SPI_CHANNEL_0, SPI_SPEED, SPI_FLAGS)
+handle_pot2 = pi.spi_open(SPI_CHANNEL_1, SPI_SPEED, SPI_FLAGS)
+
+# Initialize the Encoder via the library
+# We provide the pins here; callbacks will be assigned later
+encoder = Rotary(pi, PIN_A, PIN_B, BUTTON_PIN)
+
+# --- Logic Helpers ---
 
 
 def ohms_to_step(ohms):
-    ohms = max(MINIMUM_OHMS, min(ohms, MAXIMUM_OHMS))
-    return int((ohms - MINIMUM_OHMS) / (MAXIMUM_OHMS - MINIMUM_OHMS) * (MAX_STEPS - 1))
+    ohms = max(0, min(ohms, MAXIMUM_OHMS))
+    return int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
 
 
 def step_to_ohms(step):
-    return int(
-        MINIMUM_OHMS +
-        (step / (MAX_STEPS - 1)) * (MAXIMUM_OHMS - MINIMUM_OHMS)
-    )
+    return (step / MAX_STEPS) * MAXIMUM_OHMS
 
 
-# =======================
-# Rotary Encoder Controller
-# =======================
+def set_digipot_step(step_value):
+    if 0 <= step_value <= MAX_STEPS:
+        h = handle_pot1 if selected_pot == 0 else handle_pot2
+        pi.spi_write(h, [0x00, step_value])
+        approx_ohms = step_to_ohms(step_value)
+        print(
+            f"Pot {selected_pot + 1} | Step: {step_value} | Approx: {approx_ohms:.1f} Ohms")
 
-class RotaryEncoder:
-    def __init__(self, pi):
-        self.pi = pi
-        self.ohms = DEFAULT_OHMS
-        self.last_tick = None
+# --- State Variables ---
 
-        self.encoder = encoder(
-            pi,
-            PIN_A,
-            PIN_B,
-            callback=self._on_rotate,
-            pulses_per_rev=20
+
+ohms = DEFAULT_OHMS
+selected_pot = 0
+menu_selection = 0
+isMainPage = True
+
+# --- Callback Functions ---
+
+
+def on_menu_rotate(direction):
+    """Callback for Main Page: Switch between Pot 1 and Pot 2."""
+    global menu_selection
+    # direction is 1 (CW) or -1 (CCW)
+    if direction == 1:
+        menu_selection = 1
+    else:
+        menu_selection = 0
+    pot_lcd.request_main_page_update(menu_selection)
+
+
+def on_menu_press():
+    """Callback for Main Page: Select the pot and switch states."""
+    global isMainPage, selected_pot
+    selected_pot = menu_selection
+    isMainPage = False
+
+
+def on_pot_rotate(direction):
+    """Callback for Pot Page: Adjust Ohm value."""
+    global ohms
+    # Logic: small movements = 10, faster or consistent movements = 100
+    # (Note: pigpio-encoder provides raw direction; you can add speed logic if needed)
+    change = 100
+    resulting_ohms = ohms + (change * direction)
+
+    if MINIMUM_OHMS <= resulting_ohms <= MAXIMUM_OHMS:
+        ohms = resulting_ohms
+        step = ohms_to_step(ohms)
+        pot_lcd.request_pot_page_update(step_to_ohms(step), selected_pot)
+
+
+def on_pot_press():
+    """Callback for Pot Page: Set value on click."""
+    step = ohms_to_step(ohms)
+    set_digipot_step(step)
+    pot_lcd.request_confirmation(selected_pot)
+
+
+def on_pot_long_press():
+    """Callback for Pot Page: Return to main on 3s hold."""
+    global isMainPage, ohms
+    ohms = DEFAULT_OHMS
+    isMainPage = True
+
+# --- Main loop ---
+
+
+print("Starting...")
+try:
+    while True:
+        # --- State: Main Page ---
+        isMainPage = True
+        pot_lcd.draw_main_page()
+
+        # Configure encoder for menu navigation
+        encoder.setup(
+            rotary_callback=on_menu_rotate,
+            sw_callback=on_menu_press
         )
 
-    def _on_rotate(self, delta):
-        """
-        delta > 0  -> clockwise (by library definition)
-        delta < 0  -> counterclockwise
+        while isMainPage:
+            pot_lcd.process_updates()
+            time.sleep(0.05)
 
-        We INVERT delta so:
-        - Clockwise   -> increase ohms
-        - CCW         -> decrease ohms
-        """
+        # --- State: Pot Control Page ---
+        isMainPage = False
+        ohms = DEFAULT_OHMS
+        step = ohms_to_step(ohms)
+        pot_lcd.request_pot_page_update(step_to_ohms(step), selected_pot)
 
-        delta = -delta  # 🔥 FIXES DIRECTION FOREVER 🔥
+        # Configure encoder for value adjustment
+        # Setting long_press_duration to 3000ms (3 seconds)
+        encoder.setup(
+            rotary_callback=on_pot_rotate,
+            sw_callback=on_pot_press,
+            long_press_callback=on_pot_long_press,
+            long_press_t=3000
+        )
 
-        now = self.pi.get_current_tick()
+        while not isMainPage:
+            pot_lcd.process_updates()
+            time.sleep(0.05)
 
-        if self.last_tick is None:
-            self.last_tick = now
-            return
-
-        dt = pigpio.tickDiff(self.last_tick, now)
-        self.last_tick = now
-
-        if dt <= 0:
-            return
-
-        speed = 1_000_000 / dt  # detents/sec
-
-        if speed < SLOW_THRESHOLD:
-            step = 10
-        else:
-            step = 100
-
-        self._apply_change(delta * step)
-
-    def _apply_change(self, delta_ohms):
-        new_val = self.ohms + delta_ohms
-
-        if MINIMUM_OHMS <= new_val <= MAXIMUM_OHMS:
-            self.ohms = new_val
-            step = ohms_to_step(self.ohms)
-            approx = step_to_ohms(step)
-
-            print(
-                f"Ohms: {self.ohms:5d} | "
-                f"Step: {step:3d} | "
-                f"Approx: {approx:6d}"
-            )
-
-    def cancel(self):
-        self.encoder.cancel()
-
-
-# =======================
-# Main
-# =======================
-
-def main():
-    pi = pigpio.pi()
-    if not pi.connected:
-        raise RuntimeError("pigpio not running")
-
-    pi.set_mode(PIN_A, pigpio.INPUT)
-    pi.set_mode(PIN_B, pigpio.INPUT)
-    pi.set_pull_up_down(PIN_A, pigpio.PUD_UP)
-    pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
-
-    rotary = RotaryEncoder(pi)
-
-    print("Rotary encoder running (Ctrl+C to exit)")
-    try:
-        while True:
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        print("\nExiting...")
-    finally:
-        rotary.cancel()
-        pi.stop()
-
-
-if __name__ == "__main__":
-    main()
+except KeyboardInterrupt:
+    print("\nStopping...")
+    pot_lcd.close()
+    pi.spi_close(handle_pot1)
+    pi.spi_close(handle_pot2)
+    pi.stop()
