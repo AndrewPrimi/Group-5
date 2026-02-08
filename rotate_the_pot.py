@@ -155,8 +155,8 @@ last_step_tick = None
 def encoder_callback(gpio, level, tick):
     global last_state, last_step_tick, ohms
 
-    a = pi.read(PIN_A)
-    b = pi.read(PIN_B)
+    a = pi.read(PIN_B)
+    b = pi.read(PIN_A)
     state = (a << 1) | b
 
     if last_state is None:
