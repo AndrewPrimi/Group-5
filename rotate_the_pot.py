@@ -165,6 +165,8 @@ def encoder_callback(gpio, level, tick):
         if speed > SPEED_LIMIT:
             speed = SPEED_LIMIT
 
+        print(f"speed: {speed}")
+
         if pi.read(PIN_B) == 0:
             direction = 1
         else:
