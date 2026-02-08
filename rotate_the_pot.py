@@ -40,7 +40,7 @@ print(f"Pot 2 handle: {handle_pot2}")
 
 def ohms_to_step(ohms):
     """Convert desired Ohms to a step value (0-128)."""
-    ohms = max(0, min(ohms, MAXIMUM_OHMS))
+    ohms = max(0, min(ohms, MAXIMUM_OHMS)) - 100
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
 
