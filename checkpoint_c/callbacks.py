@@ -1,8 +1,8 @@
 import pigpio
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
-    MINIMUM_OHMS, MAXIMUM_OHMS, SPEED_LIMIT,
-    ENCODER_DEBOUNCE_US, MENU_DEBOUNCE_US, BUTTON_DEBOUNCE_US,
+    MINIMUM_OHMS, MAXIMUM_OHMS,
+    BUTTON_DEBOUNCE_US,
     DEFAULT_OHMS,
 )
 
@@ -35,20 +35,9 @@ def setup_callbacks(state, pi, pot_lcd):
 
 def menu_encoder_callback(gpio, level, tick):
     """Rotate between Pot 1 and Pot 2 on the main page."""
-    if _s['last_tick'] is not None:
-        dt = pigpio.tickDiff(_s['last_tick'], tick)
-        if dt < MENU_DEBOUNCE_US:
-            _s['last_tick'] = tick
-            return
-
-        if _pi.read(PIN_B) == 0:
-            _s['menu_selection'] = 1
-        else:
-            _s['menu_selection'] = 0
-
-        _pot_lcd.request_main_page_update(_s['menu_selection'])
-
-    _s['last_tick'] = tick
+    # Only 2 options, so just toggle on each clean edge (glitch filter handles debounce)
+    _s['menu_selection'] = 1 - _s['menu_selection']
+    _pot_lcd.request_main_page_update(_s['menu_selection'])
 
 
 def menu_button_callback(gpio, level, tick):
@@ -89,11 +78,6 @@ def encoder_callback(gpio, level, tick):
     """Handle rotary encoder rotation on the pot control page."""
     if _s['last_tick'] is not None:
         dt = pigpio.tickDiff(_s['last_tick'], tick)
-
-        if dt < ENCODER_DEBOUNCE_US:
-            _s['last_tick'] = tick
-            return
-
         speed = min(1_000_000 / dt, 1000)
 
         if _pi.read(PIN_B) == 0:
@@ -101,8 +85,7 @@ def encoder_callback(gpio, level, tick):
         else:
             direction = 1  # temp swap
 
-        if speed <= SPEED_LIMIT:
-            _change_steps(direction, speed)
+        _change_steps(direction, speed)
 
     _s['last_tick'] = tick
 

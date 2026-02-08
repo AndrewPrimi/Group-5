@@ -52,6 +52,11 @@ pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
 pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 
+# Hardware glitch filters - pigpio daemon filters bounces before callbacks fire
+pi.set_glitch_filter(PIN_A, 5000)            # 5ms glitch filter on encoder CLK
+pi.set_glitch_filter(PIN_B, 5000)            # 5ms glitch filter on encoder DT
+pi.set_glitch_filter(rotaryEncoder_pin, 5000) # 5ms glitch filter on button
+
 # Give callbacks access to shared state
 setup_callbacks(state, pi, pot_lcd)
 
@@ -68,7 +73,7 @@ try:
 
         pot_lcd.draw_main_page()
 
-        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, menu_encoder_callback)
+        cb_enc = pi.callback(PIN_A, pigpio.FALLING_EDGE, menu_encoder_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
         state['active_callbacks'] = [cb_enc, cb_btn]
@@ -88,7 +93,7 @@ try:
         pot_lcd.request_pot_page_update(step_to_ohms(step), state['selected_pot'])
         pot_lcd.process_updates()
 
-        cb_enc = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc = pi.callback(PIN_A, pigpio.FALLING_EDGE, encoder_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
         state['active_callbacks'] = [cb_enc, cb_btn]
