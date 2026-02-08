@@ -7,10 +7,11 @@ from ohms_steps import (
 )
 from callbacks import (
     setup_callbacks, clear_callbacks,
-    menu_encoder_callback, menu_button_callback,
+    menu_direction_callback, menu_button_callback,
     encoder_callback, callback_set_digi,
     PIN_A, PIN_B,
 )
+import rotary_encoder
 
 # Rotary encoder button pin
 rotaryEncoder_pin = 17
@@ -72,10 +73,10 @@ try:
         lcd.put_line(2, '  Pot 2')
         lcd.put_line(3, '')
 
-        cb_enc = pi.callback(PIN_A, pigpio.FALLING_EDGE, menu_encoder_callback)
+        decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
-        state['active_callbacks'] = [cb_enc, cb_btn]
+        state['active_callbacks'] = [decoder, cb_btn]
 
         while state['isMainPage']:
             time.sleep(0.05)

@@ -24,9 +24,11 @@ def setup_callbacks(state, pi, lcd):
 
 # --- Main page callbacks ---
 
-def menu_encoder_callback(gpio, level, tick):
-    """Rotate between Pot 1 and Pot 2 on the main page."""
-    if _pi.read(PIN_B) == 0:
+def menu_direction_callback(direction):
+    """Handle rotary encoder direction on the main menu page.
+    Called by rotary_encoder.decoder with direction: 1 (CW) or -1 (CCW).
+    """
+    if direction == 1:
         _s['menu_selection'] = 1   # CW -> Pot 2
     else:
         _s['menu_selection'] = 0   # CCW -> Pot 1
