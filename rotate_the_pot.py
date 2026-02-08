@@ -228,7 +228,7 @@ try:
 
         cb_enc_a = pi.callback(PIN_A, pigpio.EITHER_EDGE,
                                menu_encoder_callback)
-        cb_enc_b = pi.callback(PIN_B, pigpio.EITHER_EDGE,
+        cb_enc_b = pi.callback(PIN_B, pigpio.FALLING_EDGE,
                                menu_encoder_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
@@ -246,10 +246,9 @@ try:
         set_lcd()
 
         cb_enc_1 = pi.callback(PIN_A, pigpio.EITHER_EDGE, encoder_callback)
-        cb_enc_b = pi.callback(PIN_B, pigpio.EITHER_EDGE, encoder_callback)
+        cb_enc_b = pi.callback(PIN_B, pigpio.FALLING_EDGE, encoder_callback)
         cb_btn = pi.callback(
-            # previously was EITHER_EDGE before.
-            rotaryEncoder_pin, pigpio.FALLING_EDGE, callback_set_digi)
+            rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
         active_callbacks = [cb_enc_a, cb_enc_b, cb_btn]
 
         while not isMainPage:
