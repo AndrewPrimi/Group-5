@@ -1,7 +1,8 @@
 import pigpio
+import time
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
-    MINIMUM_OHMS, MAXIMUM_OHMS, SPEED_LIMIT,
+    MINIMUM_OHMS, MAXIMUM_OHMS,
     BUTTON_DEBOUNCE_US, DEFAULT_OHMS,
 )
 
@@ -71,21 +72,16 @@ def callback_set_digi(gpio, level, tick):
             _s['isMainPage'] = True
 
 
-def encoder_callback(gpio, level, tick):
-    """Handle rotary encoder rotation on the pot control page."""
-    if _s['last_tick'] is not None:
-        dt = pigpio.tickDiff(_s['last_tick'], tick)
-        speed = min(1_000_000 / dt, 1000)
-
-        if _pi.read(PIN_B) == 0:
-            direction = -1
-        else:
-            direction = 1
-
-        if speed <= SPEED_LIMIT:
-            _change_steps(direction, speed)
-
-    _s['last_tick'] = tick
+def pot_direction_callback(direction):
+    """Handle rotary encoder rotation on the pot control page.
+    CW (+1) increases ohms, CCW (-1) decreases ohms.
+    """
+    now = time.time()
+    if _s['last_time'] is not None:
+        dt = now - _s['last_time']
+        speed = min(1.0 / dt, 1000)  # detents per second
+        _change_steps(direction, speed)
+    _s['last_time'] = now
 
 
 def _change_steps(direction, speed):

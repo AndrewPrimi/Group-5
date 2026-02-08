@@ -8,7 +8,7 @@ from ohms_steps import (
 from callbacks import (
     setup_callbacks, clear_callbacks,
     menu_direction_callback, menu_button_callback,
-    encoder_callback, callback_set_digi,
+    pot_direction_callback, callback_set_digi,
     PIN_A, PIN_B,
 )
 import rotary_encoder
@@ -35,7 +35,7 @@ state = {
     'selected_pot': 0,
     'menu_selection': 0,
     'isMainPage': True,
-    'last_tick': None,
+    'last_time': None,
     'button_press_tick': None,
     'button_last_tick': None,
     'spi_handle': spi_handle,
@@ -83,7 +83,7 @@ try:
 
         # pot control page
         state['isMainPage'] = False
-        state['last_tick'] = None
+        state['last_time'] = None
         state['button_last_tick'] = None
         clear_callbacks(state)
 
@@ -94,10 +94,10 @@ try:
         lcd.put_line(2, '')
         lcd.put_line(3, '')
 
-        cb_enc = pi.callback(PIN_A, pigpio.FALLING_EDGE, encoder_callback)
+        decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, pot_direction_callback)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
-        state['active_callbacks'] = [cb_enc, cb_btn]
+        state['active_callbacks'] = [decoder, cb_btn]
 
         while not state['isMainPage']:
             time.sleep(0.05)
