@@ -169,7 +169,7 @@ def encoder_callback(gpio, level, tick):
             print(f"CW")
         else:
             direction = -1
-            print(f"CW")
+            print(f"CCW")
 
         if speed <= SPEED_LIMIT:
             change_steps(direction, speed)
