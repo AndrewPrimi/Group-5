@@ -5,8 +5,8 @@ import sys
 sys.path.insert(0, 'checkpoint_c')
 
 # Constants; 7-bit digital potentiometer (0-128 steps)
-MINIMUM_OHMS = 10
-MAXIMUM_OHMS = 12000
+MINIMUM_OHMS = 100
+MAXIMUM_OHMS = 10000
 MAX_STEPS = 128
 DEFAULT_OHMS = 5000
 SPEED_LIMIT = 100
