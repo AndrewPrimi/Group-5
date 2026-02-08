@@ -68,11 +68,11 @@ def draw_main_page():
     """Draw main page with < indicator on the selected pot."""
     lcd.put_line(0, 'Select a Pot:')
     if menu_selection == 0:
-        lcd.put_line(1, '< Pot 1')
+        lcd.put_line(1, '> Pot 1')
         lcd.put_line(2, '  Pot 2')
     else:
         lcd.put_line(1, '  Pot 1')
-        lcd.put_line(2, '< Pot 2')
+        lcd.put_line(2, '> Pot 2')
     lcd.put_line(3, '')
 
 
