@@ -148,6 +148,9 @@ def callback_set_digi(gpio, level, tick):
             return_to_main()
 
 
+last_b = None
+
+
 def encoder_callback(gpio, level, tick):
     global ohms, last_tick
 
@@ -159,10 +162,22 @@ def encoder_callback(gpio, level, tick):
             return
 
         # Direction determined ONLY here
-        if pi.read(PIN_B) == 0:
-            direction = 1
-        else:
-            direction = -1
+        # if pi.read(PIN_B) == 0:
+        #     direction = 1
+        # else:
+        #     direction = -1
+
+        b = pi.read(PIN_B)
+
+        if last_b is None:
+            last_b = b
+            return
+
+        if b == last_b:
+            return  # unstable / missed transition
+
+        direction = 1 if b == 0 else -1
+        last_b = b
 
         # Speed based on time between detents
         speed = 1_000_000 / dt  # detents per second
