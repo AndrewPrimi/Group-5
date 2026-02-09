@@ -158,7 +158,7 @@ def _change_steps(direction, speed):
     if MINIMUM_OHMS <= resulting_ohms <= MAXIMUM_OHMS:
         _s['ohms'] = resulting_ohms
         step = ohms_to_step(_s['ohms'])
-        _lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+        _lcd.put_line(1, f'Ohms: {resulting_ohms}')
         print(f"Current Ohms: {_s['ohms']}")
     else:
         print("ohm value is out of range...")
