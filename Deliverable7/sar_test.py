@@ -16,12 +16,12 @@ if not pi.connected:
 spi_handle = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
 # Create SAR object
-sar = SAR_ADC(pi, spi_handle, comparator_pin=CURRENT_COMPARATOR_PIN, selected_pot=0)
+sar = SAR_ADC(pi, spi_handle, comparator_pin=VOLTAGE_COMPARATOR_PIN, selected_pot=0)
 
 try:
     # Voltage Test
-    #voltage, step = sar.read_voltage(3.3)
-    #print(f"Measured voltage: {voltage:.3f} V, step: {step}")
+    voltage, step = sar.read_voltage(3.3)
+    print(f"Measured voltage: {voltage:.3f} V, step: {step}")
 
     # Ohmmeter Test
     ohm, step = sar.read_ohms(5, 4700)
