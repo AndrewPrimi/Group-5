@@ -93,7 +93,7 @@ class SAR_ADC:
         """
         step = self.read_step()
         # voltage is a fraction of Vref
-        voltage = Vref * (step / MAX_STEPS)
+        voltage = -Vref + (2 * Vref) * (step / MAX_STEPS)
 
         # voltage must be within the range [-6, 6] 
         if voltage > MAX_VOLTAGE:
