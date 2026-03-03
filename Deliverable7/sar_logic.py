@@ -117,7 +117,7 @@ class SAR_ADC:
         return R_unknown, step
 
 
-    # read voltage test
-    sar = SAR_ADC(pi, spi_handle, comparator_pin=17)
-    voltage, step = sar.read_voltage(3.3)
-    print(voltage)
+# read voltage test
+sar = SAR_ADC(pi, spi_handle, comparator_pin=17)
+voltage, step = sar.read_voltage(3.3)
+print(voltage)
