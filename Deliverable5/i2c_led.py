@@ -1,26 +1,17 @@
 #!/usr/bin/env python
 
 # i2c_lcd.py
-# 2016-04-20
-# Public Domain
+# Originally written by joan2937 as part of the pigpio library examples.
+# Source: https://abyz.me.uk/rpi/pigpio/examples.html
+# Date: 2016-04-20
+# License: Public Domain
 
 class lcd:
 
+   
+
    """
    This class provides simple functions to display text on an I2C LCD
-   based on the PCF8574T I2C 8-bit port expander.
-
-   PCF8574T P7   P6   P5   P4   P3   P2   P1   P0
-   HD44780  B7   B6   B5   B4   BL   E    RW   RS
-
-   This code defaults to working with an adapter with the above
-   configuration.
-
-   If yours is different you will have to specify the mapping
-   when you instantiate the LCD.
-   """
-
-   """
    Commands
 
    LCD_CLEARDISPLAY = 0x01

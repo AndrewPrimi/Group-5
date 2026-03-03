@@ -28,6 +28,8 @@ def ohms_to_step(ohms):
     return step
 
 
+
+
 def step_to_ohms(step):
     """Convert step value to approximate Ohms."""
     return (step / MAX_STEPS) * MAXIMUM_OHMS
@@ -41,6 +43,7 @@ def set_digipot_step(step_value):
         print(f"Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
     else:
         print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
+
 
 try:
     print("Starting the cycle.\nMeasure across Terminal A and Wiper.")
