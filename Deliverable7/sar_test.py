@@ -3,7 +3,8 @@ from sar_logic import SAR_ADC
 
 SPI_CHANNEL = 0
 SPI_BAUD = 1000000
-COMPARATOR_PIN = 18
+VOLTAGE_COMPARATOR_PIN = 18
+CURRENT_COMPARATOR_PIN = 23
 
 # Connect to pigpio daemon
 pi = pigpio.pi()
@@ -15,7 +16,7 @@ if not pi.connected:
 spi_handle = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
 # Create SAR object
-sar = SAR_ADC(pi, spi_handle, comparator_pin=COMPARATOR_PIN, selected_pot=0)
+sar = SAR_ADC(pi, spi_handle, comparator_pin=CURRENT_COMPARATOR_PIN, selected_pot=0)
 
 try:
     # Voltage Test
