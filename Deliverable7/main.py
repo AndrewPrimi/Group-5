@@ -14,7 +14,7 @@ A long button hold (2-3 s) on pages 3a/3b returns to the main page.
 
 import pigpio
 import time
-import i2c_lcd
+import i2c_led
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
     DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
