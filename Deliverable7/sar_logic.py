@@ -115,4 +115,5 @@ class SAR_ADC:
             return None, step
         # The R_unknown R_known voltage divider formula
         R_unknown = R_known * Vin / (Vref - Vin)
+        R_unknown = 10000 - R_unknown
         return R_unknown, step
