@@ -38,9 +38,10 @@ class SAR_ADC:
     # ── Write step value ─────────────────────────────────────────────
 
     def _write_step(self, step):
-        """Write raw step to MCP4231."""
+        step = max(0, min(MAX_STEPS - 1, step))
         cmd = 0x00 if self.selected_pot == 0 else 0x10
         self.pi.spi_write(self.spi_handle, [cmd, step])
+        time.sleep(self.settle_time)
 
     # ── Read step value in binary search ─────────────────────────────
 
@@ -70,8 +71,19 @@ class SAR_ADC:
             else:
                 low = mid + 1
 
-        return high
+        return max(0, min(MAX_STEPS - 1, high))
 
+    # ── Read comparator ──────────────────── 
+    
+    def _read_comparator(self):
+        val = self.pi.read(self.compare_pin)
+        
+        if self.invert:
+            val ^= 1
+            
+        return val
+
+    
     # ── Voltmeter: Return Vin approximation or MAX_VOLTAGE  ────────────────────
 
     def read_voltage(self, Vref):
@@ -103,3 +115,9 @@ class SAR_ADC:
         # The R_unknown R_known voltage divider formula
         R_unknown = R_known * Vin / (Vref - Vin)
         return R_unknown, step
+
+
+    # read voltage test
+    sar = SAR_ADC(pi, spi_handle, comparator_pin=17)
+    voltage, step = sar.read_voltage(3.3)
+    print(voltage)
