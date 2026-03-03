@@ -9,6 +9,7 @@ the step closest to the actual Vin.
 """
 
 import time
+import pigpio
 from ohms_steps import MAX_STEPS, step_to_ohms
 
 MAX_VOLTAGE = 6
