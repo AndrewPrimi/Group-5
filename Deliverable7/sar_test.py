@@ -23,7 +23,7 @@ try:
     #print(f"Measured voltage: {voltage:.3f} V, step: {step}")
 
     # Ohmmeter Test
-    ohm, step = sar.read_ohms(1000)
+    ohm, step = sar.read_ohms(3.3, 4700)
     print(f"Measured ohms: {ohm:.3f} V, step: {step}") 
 finally:
     # Close SPI and stop pigpio
