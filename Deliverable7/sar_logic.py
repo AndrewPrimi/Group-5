@@ -72,8 +72,8 @@ class SAR_ADC:
             else:
                 low = mid + 1
 
-        return max(0, min(MAX_STEPS - 1, high))
-
+        return high        
+        
     # ── Read comparator ──────────────────── 
     
     def _read_comparator(self):
