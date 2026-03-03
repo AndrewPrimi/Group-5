@@ -116,9 +116,3 @@ class SAR_ADC:
         # The R_unknown R_known voltage divider formula
         R_unknown = R_known * Vin / (Vref - Vin)
         return R_unknown, step
-
-
-# read voltage test
-sar = SAR_ADC(pi, spi_handle, comparator_pin=18)
-voltage, step = sar.read_voltage(3.3)
-print(voltage)
