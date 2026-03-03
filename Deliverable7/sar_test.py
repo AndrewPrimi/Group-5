@@ -18,8 +18,13 @@ spi_handle = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 sar = SAR_ADC(pi, spi_handle, comparator_pin=COMPARATOR_PIN, selected_pot=0)
 
 try:
-    voltage, step = sar.read_voltage(3.3)
-    print(f"Measured voltage: {voltage:.3f} V, step: {step}")
+    # Voltage Test
+    #voltage, step = sar.read_voltage(3.3)
+    #print(f"Measured voltage: {voltage:.3f} V, step: {step}")
+
+    # Ohmmeter Test
+    ohm, step = sar.read_ohms(1000)
+    print(f"Measured ohms: {ohm:.3f} V, step: {step}") 
 finally:
     # Close SPI and stop pigpio
     pi.spi_close(spi_handle)
