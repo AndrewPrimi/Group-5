@@ -118,6 +118,6 @@ class SAR_ADC:
 
 
 # read voltage test
-sar = SAR_ADC(pi, spi_handle, comparator_pin=17)
+sar = SAR_ADC(pi, spi_handle, comparator_pin=18)
 voltage, step = sar.read_voltage(3.3)
 print(voltage)
