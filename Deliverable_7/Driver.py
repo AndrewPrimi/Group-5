@@ -66,6 +66,16 @@ adc_handle     = open_adc(pi)
 print(f"Digipot SPI handle : {digipot_handle}")
 print(f"ADC SPI handle     : {adc_handle}")
 
+# CE/wiper debug: check GPIO7 mode and sweep wiper to extremes
+print(f"GPIO7 (CE1) mode   : {pi.get_mode(7)}")  # 1=OUTPUT, 7=ALT0 (SPI)
+print("Sweeping wiper to min (0) then max (127)...")
+pi.spi_write(adc_handle, [0x00, 0])
+time.sleep(1)
+print("Wiper set to 0 - measure P0W voltage now (should be ~0V)")
+pi.spi_write(adc_handle, [0x00, 127])
+time.sleep(1)
+print("Wiper set to 127 - measure P0W voltage now (should be ~3.3V)")
+
 # ── GPIO setup ────────────────────────────────────────────────────────────────
 for pin in (PIN_A, PIN_B):
     pi.set_mode(pin, pigpio.INPUT)
