@@ -99,10 +99,10 @@ def sar_measure(pi, spi_handle, comp_pin):
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
         comp = pi.read(comp_pin)
-        #if comp == 1:                  # V_midpoint > V_wiper: keep this bit
-        #    step = trial
-        if comp == 0: # invert logic kai devito
+        if comp == 1:                  # V_midpoint > V_wiper: keep this bit
             step = trial
+        #if comp == 0: # invert logic kai devito
+        #    step = trial
 
     # Final write to leave DAC at the converged value
     _write_dac(pi, spi_handle, step)
@@ -200,3 +200,22 @@ def build_display_lines(step):
 
     line3 = 'Hold btn: main menu'
     return line0, line1, line2, line3
+
+
+# Check DAC Steps changes voltage
+p = pigpio.pi()
+spi = open_adc(p)
+
+def write_dac(step):
+    step = max(0, min(step, 31))
+    pi.spi_write(spi, [0x00, step])
+    
+print("Sweeping DAC...")
+
+for step in range(32):
+    write_dac(step)
+    print("step:", step)
+    time.sleep(0.2)
+
+pi.spi_close(spi)
+pi.stop()
