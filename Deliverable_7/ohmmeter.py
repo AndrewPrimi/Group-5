@@ -215,10 +215,12 @@ def write_dac(step):
     
 print("Sweeping DAC...")
 
-for step in range(32):
-    _write_dac(step)
-    print("step:", step)
-    time.sleep(0.2)
+write_dac(127)
+
+#for step in range(32):
+ #   write_dac(step)
+  #  print("step:", step)
+   # time.sleep(0.2)
 
 p.spi_close(spi)
 p.stop()
