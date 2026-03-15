@@ -106,6 +106,7 @@ def sar_measure(pi, spi_handle, comp_pin):
 
     # Final write to leave DAC at the converged value
     _write_dac(pi, spi_handle, step)
+    print("! sar_measure step is:", step)
     return step
 
 
@@ -214,12 +215,10 @@ def write_dac(step):
     
 print("Sweeping DAC...")
 
-write_dac(0)
-
-#for step in range(32):
- #   write_dac(step)
-  #  print("step:", step)
-   # time.sleep(0.2)
+for step in range(32):
+    write_dac(step)
+    print("step:", step)
+    time.sleep(0.2)
 
 p.spi_close(spi)
 p.stop()
