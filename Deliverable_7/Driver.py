@@ -21,7 +21,7 @@ Hardware overview
 Page flow
 ---------
   Main Menu
-    ├── (encoder selects "Ohmeter")
+    ├── (encoder selects "Ohmmeter")
     └── [button press] → Ohmmeter Page
                              └── [2-s button hold] → Main Menu
 """
@@ -98,7 +98,7 @@ def show_main_menu():
     """Render the static portions of the main menu."""
     lcd.put_line(0, 'Main Menu')
     lcd.put_line(1, 'Mode Select:')
-    lcd.put_line(2, '  Ohmeter')
+    lcd.put_line(2, '  Ohmmeter')
     lcd.put_line(3, '')
 
 
