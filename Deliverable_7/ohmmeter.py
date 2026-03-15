@@ -203,6 +203,8 @@ def build_display_lines(step):
 
 
 # Check DAC Steps changes voltage
+import pigpio
+
 p = pigpio.pi()
 spi = open_adc(p)
 
