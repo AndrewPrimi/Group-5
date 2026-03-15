@@ -3,14 +3,25 @@ ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
 Hardware:
-  - MCP4131 digital potentiometer (SPI CE1) acts as the 5-bit DAC
-  - LM339 comparator output on GPIO26
-  - Voltage divider: V_supply → R_REF_OHMS → (external R_ext) → GND
-      Midpoint voltage = V_supply * R_ext / (R_REF + R_ext)
-  - MCP4131 wiper voltage = V_supply * step / MCP4131_MAX_STEPS
-  - LM339 V+ = V_midpoint,  V- = V_wiper
-      Output HIGH (GPIO=1) when V_midpoint > V_wiper  (R_ext too large, need bigger step)
-      Output LOW  (GPIO=0) when V_midpoint < V_wiper  (step is above midpoint)
+  MCP4131 wiring (SPI CE1):
+    Pin 1 (CS)  → GPIO 7  (CE1)
+    Pin 2 (SCK) → GPIO 11 (SCLK)
+    Pin 3 (SDI) → GPIO 10 (MOSI)
+    Pin 4 (VSS) → GND
+    Pin 5 (P0A) → 3.3V         ← sets wiper max voltage to 3.3V
+    Pin 6 (P0W) → Op-Amp V−    ← wiper voltage swept by SAR algorithm
+    Pin 7 (P0B) → GND          ← sets wiper min voltage to 0V
+    Pin 8 (VDD) → 3.3V
+
+  Circuit:
+    3.3V → R_REF (10kΩ) → Node A → R_ext (unknown) → GND
+    Node A  → Op-Amp V+  (non-inverting input)
+    P0W     → Op-Amp V−  (inverting input)
+    Op-Amp output → GPIO 18
+
+  SAR logic:
+    Op-Amp output HIGH (GPIO=1) when V_midpoint > V_wiper  → keep bit (step too small)
+    Op-Amp output LOW  (GPIO=0) when V_midpoint < V_wiper  → discard bit (step too large)
 
 Measurement range: 500 Ω – 10 kΩ
 
@@ -28,7 +39,7 @@ ADC_SPI_CHANNEL   = 1          # SPI CE1 (GPIO 7) for the MCP4131 DAC
 ADC_SPI_SPEED     = 50_000     # 50 kHz SPI clock
 ADC_SPI_FLAGS     = 0          # Mode 0,0; CE active-low
 
-COMPARATOR_PIN    = 26         # BCM GPIO 26 ← LM339 open-collector output
+COMPARATOR_PIN    = 18         # BCM GPIO 18 ← LM339 open-collector output
 
 MCP4131_MAX_STEPS = 31         # 5-bit SAR: positions 0–31 (32 levels)
 

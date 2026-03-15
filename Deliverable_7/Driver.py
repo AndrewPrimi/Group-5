@@ -9,8 +9,14 @@ Hardware overview
   LCD          : I2C (20-char × 4-line), addr 0x27
   Rotary enc.  : channel A = GPIO22, channel B = GPIO27, button = GPIO17
   Digipot      : MCP4231  on SPI CE0 (GPIO 8)  – retained from prev. deliverables
-  SAR DAC      : MCP4131  on SPI CE1 (GPIO 7)
-  Comparator   : LM339 output → GPIO26 (internal pull-up enabled)
+  SAR DAC      : MCP4131  on SPI CE1
+                   Pin 1 (CS)  → GPIO 7  (CE1)
+                   Pin 2 (SCK) → GPIO 11 (SCLK)
+                   Pin 3 (SDI) → GPIO 10 (MOSI)
+                   Pin 5 (P0A) → 3.3V
+                   Pin 6 (P0W) → Op-Amp V−
+                   Pin 7 (P0B) → GND
+  Comparator   : Op-Amp output → GPIO 18 (internal pull-up enabled)
 
 Page flow
 ---------
@@ -69,7 +75,7 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)   # 10 ms hardware debounce
 
-# Comparator output – LM339 open-collector, needs pull-up
+# Comparator output – LM339 open-collector on GPIO18, needs pull-up
 pi.set_mode(COMPARATOR_PIN, pigpio.INPUT)
 pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
 
