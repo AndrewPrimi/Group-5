@@ -209,14 +209,14 @@ import pigpio
 p = pigpio.pi()
 spi = open_adc(p)
 
-def write_dac(step):
-    step = max(0, min(step, 127))
-    p.spi_write(spi, [0x00, step])
+def write_dac(pi, spi_handle, step):
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
     
 print("Sweeping DAC...")
 
 for step in range(32):
-    write_dac(step)
+    write_dac(p, ADC_SPI_CHANNEL, step)
     print("step:", step)
     time.sleep(0.2)
 
