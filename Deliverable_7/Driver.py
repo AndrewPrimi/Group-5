@@ -40,6 +40,7 @@ from callbacks import (
 from ohmmeter import (
     open_adc, close_adc,
     averaged_measure, build_display_lines,
+    sar_measure,
     COMPARATOR_PIN,
 )
 
@@ -171,3 +172,4 @@ except KeyboardInterrupt:
     close_adc(pi, adc_handle)
     pi.spi_close(digipot_handle)
     pi.stop()
+B
