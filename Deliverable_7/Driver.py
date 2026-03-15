@@ -16,7 +16,7 @@ Hardware overview
                    Pin 5 (P0A) → 3.3V
                    Pin 6 (P0W) → Op-Amp V−
                    Pin 7 (P0B) → GND
-  Comparator   : Op-Amp output → GPIO 18 (internal pull-up enabled)
+  Comparator   : Op-Amp output → GPIO 23 (internal pull-up enabled)
 
 Page flow
 ---------
@@ -75,7 +75,7 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)   # 10 ms hardware debounce
 
-# Comparator output – LM339 open-collector on GPIO18, needs pull-up
+# Comparator output – LM339 open-collector on GPIO23, needs pull-up
 pi.set_mode(COMPARATOR_PIN, pigpio.INPUT)
 pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
 

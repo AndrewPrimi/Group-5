@@ -17,7 +17,7 @@ Hardware:
     3.3V → R_REF (10kΩ) → Node A → R_ext (unknown) → GND
     Node A  → Op-Amp V+  (non-inverting input)
     P0W     → Op-Amp V−  (inverting input)
-    Op-Amp output → GPIO 18
+    Op-Amp output → GPIO 23
 
   SAR logic:
     Op-Amp output HIGH (GPIO=1) when V_midpoint > V_wiper  → keep bit (step too small)
@@ -39,7 +39,7 @@ ADC_SPI_CHANNEL   = 1          # SPI CE1 (GPIO 7) for the MCP4131 DAC
 ADC_SPI_SPEED     = 50_000     # 50 kHz SPI clock
 ADC_SPI_FLAGS     = 0          # Mode 0,0; CE active-low
 
-COMPARATOR_PIN    = 18         # BCM GPIO 18 ← LM339 open-collector output
+COMPARATOR_PIN    = 23         # BCM GPIO 23 ← LM339 open-collector output
 
 MCP4131_MAX_STEPS = 31         # 5-bit SAR: positions 0–31 (32 levels)
 
