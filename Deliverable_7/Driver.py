@@ -28,6 +28,7 @@ Page flow
 
 import pigpio
 import time
+print("=== DRIVER.PY LOADED ===", flush=True)
 
 import i2c_lcd
 import rotary_encoder
