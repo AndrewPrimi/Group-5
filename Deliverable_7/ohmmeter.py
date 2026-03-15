@@ -210,7 +210,7 @@ p = pigpio.pi()
 spi = open_adc(p)
 
 def write_dac(step):
-    step = max(0, min(step, 31))
+    step = max(0, min(step, 127))
     p.spi_write(spi, [0x00, step])
     
 print("Sweeping DAC...")
