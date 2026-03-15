@@ -90,8 +90,8 @@ def sar_measure(pi, spi_handle, comp_pin):
     Assumes:
       LM339 V+ = V_midpoint (from R_ext divider)
       LM339 V- = V_wiper    (from MCP4131)
-      GPIO HIGH (1) → V_midpoint > V_wiper → keep bit (step too small)
-      GPIO LOW  (0) → V_midpoint < V_wiper → discard bit (step too large)
+      GPIO LOW  (0) → V_wiper < V_midpoint → keep bit (step too small)
+      GPIO HIGH (1) → V_wiper > V_midpoint → discard bit (step too large)
     """
     step = 0
     for bit_pos in range(4, -1, -1):   # bits 4 down to 0  (2^4=16 … 2^0=1)
@@ -100,7 +100,7 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
         comp = pi.read(comp_pin)
         print(f"  bit={bit_pos} trial={trial} wiper_reg={round(trial*127/MCP4131_MAX_STEPS)} comp={comp}")
-        if comp == 1:                  # V_midpoint > V_wiper: keep this bit
+        if comp == 0:                  # V_wiper < V_midpoint: keep this bit
             step = trial
 
     # Final write to leave DAC at the converged value
