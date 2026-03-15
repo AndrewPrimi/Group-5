@@ -98,7 +98,9 @@ def sar_measure(pi, spi_handle, comp_pin):
         trial = step | (1 << bit_pos)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
-        if pi.read(comp_pin) == 1:     # V_midpoint > V_wiper: keep this bit
+        comp = pi.read(comp_pin)
+        print(f"  bit={bit_pos} trial={trial} wiper_reg={round(trial*127/MCP4131_MAX_STEPS)} comp={comp}")
+        if comp == 1:                  # V_midpoint > V_wiper: keep this bit
             step = trial
 
     # Final write to leave DAC at the converged value
