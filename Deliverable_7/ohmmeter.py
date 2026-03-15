@@ -46,7 +46,7 @@ MCP4131_MAX_STEPS = 31         # 5-bit SAR: positions 0–31 (32 levels)
 # ── Circuit constants (update to match your actual PCB values) ────────────────
 R_REF_OHMS            = 10000   # Reference resistor in voltage divider (Ω)
 R_REF_TOLERANCE_PCT   = 0.01     # 1 % tolerance (typical metal-film resistor)
-V_SUPPLY              = 3.4      # Pi GPIO logic voltage (V)
+V_SUPPLY              = 3.5      # Pi GPIO logic voltage (V)
 
 # ── Measurement range for display ────────────────────────────────────────────
 R_MIN_OHMS = 500
