@@ -99,10 +99,10 @@ def sar_measure(pi, spi_handle, comp_pin):
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
         comp = pi.read(comp_pin)
-        # if comp == 1:                  # V_midpoint > V_wiper: keep this bit
-        #    step = trial
-        if pi.read(comp_pin) == 0: # invert logic kai devito
+        if comp == 1:                  # V_midpoint > V_wiper: keep this bit
             step = trial
+        # if pi.read(comp_pin) == 0: # invert logic kai devito
+        #    step = trial
 
     # Final write to leave DAC at the converged value
     _write_dac(pi, spi_handle, step)
