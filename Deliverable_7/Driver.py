@@ -66,16 +66,6 @@ adc_handle     = open_adc(pi)
 print(f"Digipot SPI handle : {digipot_handle}")
 print(f"ADC SPI handle     : {adc_handle}")
 
-# Wiper sweep test: walk all 32 SAR steps and print comparator reading
-print("\n--- Wiper sweep test (step 0 to 31) ---")
-print(f"{'step':>4}  {'reg':>4}  {'comp':>4}")
-for _step in range(32):
-    _reg = round(_step * 127 / 31)
-    pi.spi_write(adc_handle, [0x00, _reg])
-    time.sleep(0.05)
-    _comp = pi.read(COMPARATOR_PIN)
-    print(f"{_step:>4}  {_reg:>4}  {_comp:>4}")
-print("--- End sweep test ---\n")
 
 # ── GPIO setup ────────────────────────────────────────────────────────────────
 for pin in (PIN_A, PIN_B):
