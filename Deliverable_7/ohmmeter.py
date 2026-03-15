@@ -94,6 +94,7 @@ def sar_measure(pi, spi_handle, comp_pin):
       GPIO HIGH (1) → V_midpoint > V_wiper → keep bit (step too small)
       GPIO LOW  (0) → V_midpoint < V_wiper → discard bit (step too large)
     """
+    print("DEBUG: sar_measure entered")
     step = 0
     for bit_pos in range(4, -1, -1):   # bits 4 down to 0  (2^4=16 … 2^0=1)
         trial = step | (1 << bit_pos)
