@@ -210,7 +210,7 @@ spi = open_adc(p)
 
 def write_dac(step):
     step = max(0, min(step, 31))
-    pi.spi_write(spi, [0x00, step])
+    p.spi_write(spi, [0x00, step])
     
 print("Sweeping DAC...")
 
@@ -219,5 +219,5 @@ for step in range(32):
     print("step:", step)
     time.sleep(0.2)
 
-pi.spi_close(spi)
-pi.stop()
+p.spi_close(spi)
+p.stop()
