@@ -76,8 +76,7 @@ def _write_dac(pi, spi_handle, step):
       Byte 1: step value (0–31)
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    result = pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
-    print(f"SPI write result: {result}")  # should be 2 (bytes written), negative = error
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
 
 
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
@@ -94,7 +93,6 @@ def sar_measure(pi, spi_handle, comp_pin):
       GPIO HIGH (1) → V_midpoint > V_wiper → keep bit (step too small)
       GPIO LOW  (0) → V_midpoint < V_wiper → discard bit (step too large)
     """
-    print("DEBUG: sar_measure entered")
     step = 0
     for bit_pos in range(4, -1, -1):   # bits 4 down to 0  (2^4=16 … 2^0=1)
         trial = step | (1 << bit_pos)
