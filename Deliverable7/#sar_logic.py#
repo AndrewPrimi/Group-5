@@ -69,11 +69,11 @@ class SAR_ADC:
             # Assume Vdac > Vin, else Vdac <= Vin
             if comp == 1:
                 high = mid - 1
-            else:
+             else:
                 low = mid + 1
 
-        return max(0, min(MAX_STEPS - 1, high))
-
+        return high        
+        
     # ── Read comparator ──────────────────── 
     
     def _read_comparator(self):
@@ -93,7 +93,7 @@ class SAR_ADC:
         """
         step = self.read_step()
         # voltage is a fraction of Vref
-        voltage = Vref * (step / MAX_STEPS)
+        voltage = -Vref + (2 * Vref) * (step / MAX_STEPS)
 
         # voltage must be within the range [-6, 6] 
         if voltage > MAX_VOLTAGE:
@@ -115,5 +115,5 @@ class SAR_ADC:
             return None, step
         # The R_unknown R_known voltage divider formula
         R_unknown = R_known * Vin / (Vref - Vin)
-        R_unknown = 10000 - R_unknown
+        #R_unknown = 10000 - R_unknown
         return R_unknown, step
