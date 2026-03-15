@@ -141,7 +141,11 @@ def run_ohmmeter():
         now = time.time()
         if now - last_update >= MEASURE_INTERVAL:
             last_update = now
-            step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=5)
+            try:
+                step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=5)
+            except Exception as e:
+                print(f"ERROR in averaged_measure: {e}")
+                step = 31
             l0, l1, l2, l3 = build_display_lines(step)
             lcd.put_line(0, l0)
             lcd.put_line(1, l1)
