@@ -43,7 +43,8 @@ from ohmmeter import (
     sar_measure,
     step_to_resistance,
     tolerance,
-    COMPARATOR_PIN,
+    COMPARATOR_PIN, MCP4131_MAX_STEPS,
+    R_MIN_OHMS, R_MAX_OHMS,
 )
 
 # ── SPI for MCP4231 digipot (retained from checkpoint C) ─────────────────────
