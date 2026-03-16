@@ -39,7 +39,7 @@ from callbacks import (
 )
 from ohmmeter import (
     open_adc, close_adc,
-    averaged_measure, build_display_lines,
+    averaged_measure, #build_display_lines,
     sar_measure,
     COMPARATOR_PIN,
 )
@@ -121,7 +121,6 @@ def run_main_menu():
 
     clear_callbacks(state)
 
-
 def run_ohmmeter():
     """Continuously measure resistance and display; press button to exit."""
     state['isOhmPage']        = True
@@ -155,7 +154,53 @@ def run_ohmmeter():
 
     clear_callbacks(state)
 
+# ── Display helpers
 
+def format_ohms(ohms, width=8):
+    """Auto-range: display in Ω below 1 kΩ, kΩ above."""
+    if ohms >= 1000:
+        s = f'{ohms / 1000:.2f}k'
+    else:
+        s = f'{ohms:.0f}'
+    return s.ljust(width)
+
+
+def build_display_lines(step):
+    """Return four 20-char LCD lines for the ohmmeter page.
+
+    Line 0: page title
+    Line 1: measured resistance (auto-ranged)
+    Line 2: ±tolerance
+    Line 3: user instruction
+    """
+    r = step_to_resistance(step)
+    tol = tolerance(step)
+
+    line0 = 'Ohmmeter'
+
+    if step <= 0:
+        line1 = 'Short circuit'
+        line2 = ''
+    elif step >= MCP4131_MAX_STEPS:
+        line1 = 'Open circuit'
+        line2 = ''
+    elif r < R_MIN_OHMS:
+        line1 = f'{format_ohms(r).strip()} Ohms'
+        line2 = 'Below 500 Ohm range'
+    elif r > R_MAX_OHMS:
+        line1 = f'{format_ohms(r).strip()} Ohms'
+        line2 = 'Above 10k Ohm range'
+    else:
+        r_str   = format_ohms(r).strip()
+        tol_str = format_ohms(tol).strip()
+        line1 = f'{r_str} Ohms'
+        line2 = f'+/- {tol_str} Ohms'
+
+    line3 = 'Hold btn: main menu'
+    return line0, line1, line2, line3
+
+
+    
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 print("Starting Deliverable 7 driver...")
