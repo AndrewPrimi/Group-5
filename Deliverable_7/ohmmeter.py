@@ -75,12 +75,13 @@ def _write_dac(pi, spi_handle, step):
       Byte 0: 0x00  (address=0, cmd=write, D8=0 — steps 0–31 fit in 8 bits)
       Byte 1: step value (0–31)
     """
+
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
-    value = int(round(step * 127 / MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, value])
-    #step = max(0, min(int(step), 31))
-    #value = step * 4 
+    pi.spi_write(spi_handle, [0x00, step])  
+    
+    #step = max(0, min(step, MCP4131_MAX_STEPS))
+    #pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
+    #value = int(round(step * 127 / MCP4131_MAX_STEPS))
     #pi.spi_write(spi_handle, [0x00, value])
 
 
