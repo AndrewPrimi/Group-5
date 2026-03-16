@@ -153,7 +153,7 @@ def tolerance(step):
         #return float('inf')
         return 0.0
 
-    #r_ext = step_to_resistance(step)
+    r_ext = step_to_resistance(step)
     denom = (MCP4131_MAX_STEPS - step) ** 2
     quant_tol = 0.5 * R_REF_OHMS * MCP4131_MAX_STEPS / denom
     ref_tol   = r_ext * R_REF_TOLERANCE_PCT
