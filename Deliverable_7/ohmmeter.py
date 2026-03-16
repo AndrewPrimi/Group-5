@@ -75,13 +75,13 @@ def _write_dac(pi, spi_handle, step):
       Byte 0: 0x00  (address=0, cmd=write, D8=0 — steps 0–31 fit in 8 bits)
       Byte 1: step value (0–31)
     """
-    #step = max(0, min(step, MCP4131_MAX_STEPS))
-    #pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
-    #value = int(round(step * 127 / MCP4131_MAX_STEPS))
-    #pi.spi_write(spi_handle, [0x00, value])
-    step = max(0, min(int(step), 31))
-    value = step * 4 
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
+    value = int(round(step * 127 / MCP4131_MAX_STEPS))
     pi.spi_write(spi_handle, [0x00, value])
+    #step = max(0, min(int(step), 31))
+    #value = step * 4 
+    #pi.spi_write(spi_handle, [0x00, value])
 
 
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
@@ -151,8 +151,8 @@ def tolerance(step):
         total = sqrt(quant_tol² + ref_tol²)
     """
     if step <= 0 or step >= MCP4131_MAX_STEPS:
-        #return float('inf')
-        return 0.0
+        return float('inf')
+        #return 0.0
 
     r_ext = step_to_resistance(step)
     denom = (MCP4131_MAX_STEPS - step) ** 2
