@@ -53,7 +53,7 @@ R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
 # DAC settle time after each SPI write before reading comparator
-_SETTLE_S = 0.002   # 2 ms
+_SETTLE_S = 0.005   # 5 ms
 
 
 def open_adc(pi):
@@ -77,7 +77,10 @@ def _write_dac(pi, spi_handle, step):
     """
     #step = max(0, min(step, MCP4131_MAX_STEPS))
     #pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
-    value = int(round(step * 127 / MCP4131_MAX_STEPS))
+    #value = int(round(step * 127 / MCP4131_MAX_STEPS))
+    #pi.spi_write(spi_handle, [0x00, value])
+    step = max(0, min(int(step), 31))
+    value = step * 4 
     pi.spi_write(spi_handle, [0x00, value])
 
 
@@ -104,8 +107,6 @@ def sar_measure(pi, spi_handle, comp_pin):
         
         if comp == 1:                  # V_midpoint > V_wiper: keep this bit
             step = trial
-        #if comp == 0: # invert logic kai devito
-        #    step = trial
 
     # Final write to leave DAC at the converged value
     _write_dac(pi, spi_handle, step)
