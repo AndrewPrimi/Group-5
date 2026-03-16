@@ -42,6 +42,7 @@ from ohmmeter import (
     averaged_measure, #build_display_lines,
     sar_measure,
     step_to_resistance,
+    tolerance,
     COMPARATOR_PIN,
 )
 
