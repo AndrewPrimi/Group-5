@@ -45,7 +45,7 @@ COMPARATOR_PIN    = 23         # BCM GPIO 23 ← LM339 open-collector output
 MCP4131_MAX_STEPS = 31         # 5-bit SAR: positions 0–31 (32 levels)
 
 # ── Circuit constants (update to match your actual PCB values) ────────────────
-R_REF_OHMS            = 11000   # Reference resistor in voltage divider (Ω)
+R_REF_OHMS            = 10000   # Reference resistor in voltage divider (Ω)
 R_REF_TOLERANCE_PCT   = 0.01     # 1 % tolerance (typical metal-film resistor)
 V_SUPPLY              = 3.3      # Pi GPIO logic voltage (V)
 
@@ -54,7 +54,7 @@ R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
 # DAC settle time after each SPI write before reading comparator
-_SETTLE_S = 0.010   # 10 ms
+_SETTLE_S = 0.020   # 20 ms
 
 
 def open_adc(pi):
