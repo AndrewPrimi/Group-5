@@ -128,7 +128,7 @@ def step_to_resistance(step):
         return 0.0
     if step >= MCP4131_MAX_STEPS:
         return float('inf')
-    return R_REF_OHMS * step / (MCP4131_MAX_STEPS - step)
+    return R_REF_OHMS * step / (step)
 
 
 def tolerance(step):
