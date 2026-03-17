@@ -102,7 +102,7 @@ def _encoder_cb(direction):
 
 def _attach_callbacks():
     decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, _encoder_cb)
-    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.BOTH_EDGES, _button_cb)
+    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
     state['active_callbacks'] = [decoder, cb_btn]
 
 
@@ -262,7 +262,7 @@ def run_live_display():
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
-    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.BOTH_EDGES, _button_cb)
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
     state['active_callbacks'] = [cb_btn]
 
     last_refresh = time.time()
