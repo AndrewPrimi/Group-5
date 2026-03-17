@@ -100,11 +100,9 @@ try:
 
         # Register encoder rotation + button press callbacks
         decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
-        print("I AM RUNNING")
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
         state['active_callbacks'] = [decoder, cb_btn]
-        print("I AM FALLING")
 
         # Spin until the button callback clears isMainPage
         while state['isMainPage']:

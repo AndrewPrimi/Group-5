@@ -58,6 +58,10 @@ class decoder:
         second edge is ignored.
         """
         # Track current level of whichever pin just changed
+        print("gpio" + gpio)
+        print("self.gpioA" + self.gpioA)
+        print("self.lastGpio" + self.lastGpio)
+        
         if gpio == self.gpioA:
             self.levA = level
         else:

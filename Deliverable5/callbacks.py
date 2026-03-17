@@ -245,6 +245,7 @@ def _set_digipot_step(step_value):
 
 
 def clear_callbacks(state):
+    print("CLEAR CALLBACKS")
     """Cancel all active pigpio callbacks and clear the list."""
     for c in state['active_callbacks']:
         c.cancel()
