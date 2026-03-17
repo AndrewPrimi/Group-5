@@ -104,7 +104,7 @@ def varconst_button_callback(gpio, level, tick):
             if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
                 return
         _s['button_last_tick'] = tick
-        _s['isVarConstPage'] = False
+        _s['is≈çVarConstPage'] = False
 
 
 def constant_direction_callback(direction):
@@ -245,7 +245,6 @@ def _set_digipot_step(step_value):
 
 
 def clear_callbacks(state):
-    print("CLEAR CALLBACKS")
     """Cancel all active pigpio callbacks and clear the list."""
     for c in state['active_callbacks']:
         c.cancel()
