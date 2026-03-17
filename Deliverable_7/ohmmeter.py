@@ -115,24 +115,28 @@ def averaged_measure(pi, spi_handle, comp_pin, n=5):
 
 # ── Conversion maths ──────────────────────────────────────────────────────────
 
-def step_to_resistance(step):
+def step_to_resistance(step, r_ref=R_REF_OHMS):
     """Convert a DAC step to external resistance in ohms.
 
     From voltage divider (SAR converges when V_wiper = V_mid):
         step / MAX_STEPS  =  R_ext / (R_REF + R_ext)
 
     Solving for R_ext:
-        R_ext  =  R_REF * step / (MAX_STEPS - step)
+        R_ext  =  R_REF * (MAX_STEPS - step) / step
+
+    Args:
+        step:  converged SAR step (0–31)
+        r_ref: current resistance of the R_REF digital pot (ohms)
     """
     if step <= 0:
         return float('inf')
     if step >= MCP4131_MAX_STEPS:
         return 0.0
-    
-    return R_REF_OHMS * (MCP4131_MAX_STEPS - step) / step
+
+    return r_ref * (MCP4131_MAX_STEPS - step) / step
 
 
-def tolerance(step):
+def tolerance(step, r_ref=R_REF_OHMS):
     """Return ±tolerance (Ω) at the given DAC step.
 
     Quantisation contribution (±½ LSB):
@@ -149,9 +153,9 @@ def tolerance(step):
         return float('inf')
         #return 0.0
 
-    r_ext = step_to_resistance(step)
+    r_ext = step_to_resistance(step, r_ref)
     denom = step ** 2
-    quant_tol = 0.5 * R_REF_OHMS * MCP4131_MAX_STEPS / denom
+    quant_tol = 0.5 * r_ref * MCP4131_MAX_STEPS / denom
     ref_tol   = r_ext * R_REF_TOLERANCE_PCT
     return math.sqrt(quant_tol ** 2 + ref_tol ** 2)
 
