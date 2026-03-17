@@ -46,6 +46,10 @@ from ohmmeter import (
     COMPARATOR_PIN, MCP4131_MAX_STEPS,
     R_MIN_OHMS, R_MAX_OHMS,
 )
+from voltmeter import (
+    run_source_menu, run_measurement,
+    SRC_BACK, SRC_MAIN, SOURCE_LABELS,
+)
 
 # ── SPI for MCP4231 digipot (retained from checkpoint C) ─────────────────────
 DIGIPOT_SPI_CHANNEL = 0
@@ -103,7 +107,7 @@ def show_main_menu():
     lcd.put_line(0, 'Main Menu')
     lcd.put_line(1, 'Mode Select:')
     lcd.put_line(2, '  Ohmmeter')
-    lcd.put_line(3, '')
+    lcd.put_line(3, '  Voltmeter')
 
 
 def run_main_menu():
@@ -156,6 +160,17 @@ def run_ohmmeter():
         time.sleep(0.05)
 
     clear_callbacks(state)
+
+
+def run_voltmeter():
+    """Show source menu then measure voltage; loops until Back or Main selected."""
+    while True:
+        choice = run_source_menu(state, pi, lcd)
+        if choice in (SRC_BACK, SRC_MAIN):
+            break
+        run_measurement(state, pi, lcd, adc_handle,
+                        source_label=SOURCE_LABELS[choice])
+
 
 # ── Display helpers
 
@@ -211,7 +226,10 @@ print("Starting Deliverable 7 driver...")
 try:
     while True:
         run_main_menu()
-        run_ohmmeter()
+        if state['menu_selection'] == 1:
+            run_ohmmeter()
+        elif state['menu_selection'] == 2:
+            run_voltmeter()
 
 except KeyboardInterrupt:
     print("\nStopping...")
