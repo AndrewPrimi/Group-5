@@ -48,7 +48,7 @@ def step_to_ohms(step):
 
     raw_ohms = (step / MAX_STEPS) * MAXIMUM_OHMS
 
-    #corrected_ohms = raw_ohms - 96.692
-    corrected_ohms = 1.5 * raw_ohms - 150
+    corrected_ohms = raw_ohms - 96.692
+    #corrected_ohms = 1.5 * raw_ohms - 150
 
     return corrected_ohms
