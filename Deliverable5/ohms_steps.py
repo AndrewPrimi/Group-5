@@ -33,6 +33,7 @@ def ohms_to_step(ohms):
     Clamps the input to [0, MAXIMUM_OHMS] before converting so out-of-range
     values don't produce invalid steps.
     """
+    ohms = 4.285 * (.233 * ohms + 155.67) - 560
     ohms = max(0, min(ohms, MAXIMUM_OHMS))
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
