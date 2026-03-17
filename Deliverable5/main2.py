@@ -17,7 +17,7 @@ import time
 import i2c_lcd
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
-DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
+    DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
     CONSTANT_LABELS,
 )
 from callbacks import (
@@ -152,9 +152,10 @@ try:
 
             # Stay until a long hold sets isMainPage = True
             while not state['isMainPage']:
-                if state['button_press_tick'] is not None:
+                press_tick = state['button_press_tick']
+                if press_tick is not None:
                     now = pi.get_current_tick()
-                    if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
+                    if pigpio.tickDiff(press_tick, now) >= 2_000_000:
                         # 3 seconds elapsed while held 
                         state['ohms'] = DEFAULT_OHMS
                         state['button_press_tick'] = None

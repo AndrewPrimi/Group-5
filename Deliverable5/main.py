@@ -17,7 +17,7 @@ import time
 import i2c_lcd
 from ohms_steps import (
     ohms_to_step, step_to_ohms,
-    DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
+DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
     CONSTANT_LABELS,
 )
 from callbacks import (
