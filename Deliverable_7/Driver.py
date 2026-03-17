@@ -2,7 +2,7 @@
 Driver.py – Deliverable 7
 Group 5
 
-Main menu → Ohmeter page (SAR ADC, 500 Ω – 10 kΩ, autoranging display).
+Main menu → Ohmmeter page (SAR ADC, 500 Ω – 10 kΩ, autoranging display).
 
 Hardware overview
 -----------------
@@ -86,7 +86,7 @@ pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
 
 # ── Shared application state ──────────────────────────────────────────────────
 state = {
-    'menu_selection':   0,       # 0 = nothing highlighted, 1 = Ohmeter
+    'menu_selection':   0,       # 0 = nothing highlighted, 1 = Ohmmeter
     'isMainPage':       True,
     'isOhmPage':        False,
     'button_last_tick': None,
@@ -107,7 +107,7 @@ def show_main_menu():
 
 
 def run_main_menu():
-    """Block until the user selects Ohmeter from the main menu."""
+    """Block until the user selects Ohmmeter from the main menu."""
     state['isMainPage']       = True
     state['menu_selection']   = 0
     state['button_last_tick'] = None

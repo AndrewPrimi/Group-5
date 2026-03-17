@@ -22,7 +22,7 @@ ROTARY_BTN_PIN      = 17     # Rotary encoder push-button
 BUTTON_DEBOUNCE_US  = 200_000    # 200 ms  – ignore repeat presses
 
 # Number of selectable items on the main menu
-MENU_ITEMS = 1   # Only "Ohmeter" for now
+MENU_ITEMS = 1   # Only "Ohmmeter" for now
 
 
 def setup_callbacks(state, pi, lcd):
@@ -56,7 +56,7 @@ def menu_button_callback(gpio, level, tick):
     if _debounce(tick):
         return
 
-    if _s['menu_selection'] == 1:   # Ohmeter is item 1
+    if _s['menu_selection'] == 1:   # Ohmmeter is item 1
         _s['isMainPage'] = False     # exit main-menu wait loop
 
 
@@ -85,4 +85,4 @@ def _debounce(tick):
 def _redraw_main_menu():
     """Redraw only the item rows (rows 2-3) of the main menu."""
     sel = _s['menu_selection']
-    _lcd.put_line(2, '> Ohmeter' if sel == 1 else '  Ohmeter')
+    _lcd.put_line(2, '> Ohmmeter' if sel == 1 else '  Ohmmeter')
