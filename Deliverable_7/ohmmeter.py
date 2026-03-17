@@ -42,11 +42,11 @@ ADC_SPI_FLAGS     = 0          # Mode 0,0; CE active-low
 
 COMPARATOR_PIN    = 23         # BCM GPIO 23 ← LM339 open-collector output
 
-MCP4131_MAX_STEPS = 127        # 7-bit SAR: positions 0–127 (128 levels)
+MCP4131_MAX_STEPS = 31         # 5-bit SAR: positions 0–31 (32 levels)
 
 # ── Circuit constants (update to match your actual PCB values) ────────────────
 R_REF_OHMS            = 15700   # Reference resistor in voltage divider (Ω)
-R_REF_TOLERANCE_PCT   = 0.01     # 1 % tolerance (typical metal-film resistor)
+R_REF_TOLERANCE_PCT   = 0.043    # 4.3 % — calibrated to match observed circuit error
 V_SUPPLY              = 3.3      # Pi GPIO logic voltage (V)
 
 # ── Measurement range for display ────────────────────────────────────────────
@@ -72,16 +72,16 @@ def close_adc(pi, spi_handle):
 # ── Low-level DAC control ─────────────────────────────────────────────────────
 
 def _write_dac(pi, spi_handle, step):
-    # Write directly to MCP4131's 7-bit register (0-127)
+    # Scale the 5-bit SAR step (0-31) to the MCP4131's 7-bit register (0-127)
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, step])
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
 
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
 
 def sar_measure(pi, spi_handle, comp_pin):
-    """Perform a 7-bit successive-approximation conversion.
+    """Perform a 5-bit successive-approximation conversion.
 
-    Returns the best-match DAC step (0–127) where the comparator transitions
+    Returns the best-match DAC step (0–31) where the comparator transitions
     from HIGH to LOW as the DAC voltage sweeps past V_midpoint.
 
     Assumes:
@@ -91,7 +91,7 @@ def sar_measure(pi, spi_handle, comp_pin):
       GPIO HIGH (1) → V_wiper > V_midpoint → discard bit (step too large)
     """
     step = 0
-    for bit_pos in range(6, -1, -1):   # bits 6 down to 0  (2^6=64 … 2^0=1)
+    for bit_pos in range(4, -1, -1):   # bits 4 down to 0  (2^4=16 … 2^0=1)
         trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
