@@ -54,12 +54,14 @@ R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
 # DAC settle time after each SPI write before reading comparator
-_SETTLE_S = 0.020   # 20 ms
+_SETTLE_S = 0.005   # 5 ms
 
 
 def open_adc(pi):
     """Open SPI handle for the MCP4131 DAC.  Call once at startup."""
     pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
+    pud = pi.get_pull_up_down(COMPARATOR_PIN)
+    print(f"GPIO {COMPARATOR_PIN} pull: {pud} (expected 2 = PUD_UP)")
     return pi.spi_open(ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS)
 
 
