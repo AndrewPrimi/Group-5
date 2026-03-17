@@ -33,6 +33,7 @@ Tolerance sources:
 
 import time
 import math
+import pigpio
 
 # ── Hardware constants ────────────────────────────────────────────────────────
 ADC_SPI_CHANNEL   = 1          # SPI CE1 (GPIO 7) for the MCP4131 DAC
@@ -58,6 +59,7 @@ _SETTLE_S = 0.005   # 5 ms
 
 def open_adc(pi):
     """Open SPI handle for the MCP4131 DAC.  Call once at startup."""
+    pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
     return pi.spi_open(ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS)
 
 
@@ -117,11 +119,11 @@ def averaged_measure(pi, spi_handle, comp_pin, n=5):
 def step_to_resistance(step):
     """Convert a DAC step to external resistance in ohms.
 
-    From voltage divider (SAR converges to complement step):
-        V_mid / V_supply  =  R_ext / (R_REF + R_ext)  =  (MAX_STEPS - step) / MAX_STEPS
+    From voltage divider (SAR converges when V_wiper = V_mid):
+        step / MAX_STEPS  =  R_ext / (R_REF + R_ext)
 
     Solving for R_ext:
-        R_ext  =  R_REF * (MAX_STEPS - step) / step
+        R_ext  =  R_REF * step / (MAX_STEPS - step)
     """
     if step <= 0:
         return float('inf')
