@@ -45,7 +45,7 @@ COMPARATOR_PIN    = 23         # BCM GPIO 23 ← LM339 open-collector output
 MCP4131_MAX_STEPS = 31         # 5-bit SAR: positions 0–31 (32 levels)
 
 # ── Circuit constants (update to match your actual PCB values) ────────────────
-R_REF_OHMS            = 10000   # Reference resistor in voltage divider (Ω)
+R_REF_OHMS            = 11000   # Reference resistor in voltage divider (Ω)
 R_REF_TOLERANCE_PCT   = 0.01     # 1 % tolerance (typical metal-film resistor)
 V_SUPPLY              = 3.3      # Pi GPIO logic voltage (V)
 
@@ -60,6 +60,8 @@ _SETTLE_S = 0.010   # 10 ms
 def open_adc(pi):
     """Open SPI handle for the MCP4131 DAC.  Call once at startup."""
     pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
+    pud = pi.get_pull_up_down(COMPARATOR_PIN)
+    print(f"GPIO {COMPARATOR_PIN} pull-up/down: {pud} (expected {pigpio.PUD_UP} = PUD_UP)")
     return pi.spi_open(ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS)
 
 
