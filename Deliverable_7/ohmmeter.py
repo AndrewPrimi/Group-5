@@ -69,14 +69,9 @@ def close_adc(pi, spi_handle):
 # ── Low-level DAC control ─────────────────────────────────────────────────────
 
 def _write_dac(pi, spi_handle, step):
-    """Write a wiper position (0–31) to the MCP4131 via SPI.
-
-    MCP4131 16-bit command frame (write to wiper 0, address 0x0):
-      Byte 0: 0x00  (address=0, cmd=write, D8=0 — steps 0–31 fit in 8 bits)
-      Byte 1: step value (0–31)
-    """
-    step = max(0, min(step, MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, int(round(step * 127 / MCP4131_MAX_STEPS))])
+    # Send the raw step (0-31) without scaling it to 127
+    step = max(0, min(step, 31))
+    pi.spi_write(spi_handle, [0x00, step])
 
     
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
