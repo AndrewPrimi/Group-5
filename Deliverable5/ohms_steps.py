@@ -44,4 +44,9 @@ def step_to_ohms(step):
 
     This is the inverse of ohms_to_step (with minor rounding differences).
     """
-    return (step / MAX_STEPS) * MAXIMUM_OHMS
+
+    raw_ohms = (step / MAX_STEPS) * MAXIMUM_OHMS
+
+    corrected_ohms =((raw_ohms + 560) / 4.285 - 155.67) / .233
+
+    return corrected_ohms
