@@ -60,8 +60,6 @@ _SETTLE_S = 0.010   # 10 ms
 def open_adc(pi):
     """Open SPI handle for the MCP4131 DAC.  Call once at startup."""
     pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
-    pud = pi.get_pull_up_down(COMPARATOR_PIN)
-    print(f"GPIO {COMPARATOR_PIN} pull-up/down: {pud} (expected {pigpio.PUD_UP} = PUD_UP)")
     return pi.spi_open(ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS)
 
 
