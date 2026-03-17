@@ -11,7 +11,7 @@ DUTY = 500000       # 50% duty cycle
 pi.set_mode(GPIO, pigpio.OUTPUT)
 pi.hardware_PWM(GPIO, FREQ, DUTY)
 
-time.sleep(60)
+time.sleep(10000)
 
 pi.hardware_PWM(GPIO, 0, 0)  # stop
 pi.stop()
