@@ -50,11 +50,5 @@ def step_to_ohms(step):
 
     #corrected_ohms = raw_ohms - 96.692
     corrected_ohms = 1.5 * raw_ohms - 150
-    if corrected_ohms < 4000:
-        corrected_ohms -= 100
-    if corrected_ohms < 2100:
-        corrected_ohms -= 100
-    if corrected_ohms < 500:
-        corrected_ohms -= 100
 
     return corrected_ohms
