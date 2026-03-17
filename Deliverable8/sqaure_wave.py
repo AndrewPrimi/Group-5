@@ -30,7 +30,7 @@ import pigpio
 import spidev
 
 # ── Hardware constants ────────────────────────────────────────────────────────
-GPIO_PIN   = 4          # BCM pin for digital square-wave output
+GPIO_PIN   = 12        # BCM pin for digital square-wave output
 SPI_BUS    = 0
 SPI_DEVICE = 0
 
