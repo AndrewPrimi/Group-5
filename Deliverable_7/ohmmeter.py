@@ -69,9 +69,9 @@ def close_adc(pi, spi_handle):
 # ── Low-level DAC control ─────────────────────────────────────────────────────
 
 def _write_dac(pi, spi_handle, step):
-    # Send the raw step (0-31) without scaling it to 127
-    step = max(0, min(step, 31))
-    pi.spi_write(spi_handle, [0x00, step])
+    # Scale the 5-bit SAR step (0-31) to the MCP4131's 7-bit register (0-127)
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
 
     
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ def sar_measure(pi, spi_handle, comp_pin):
         #if comp == 1:                  # V_midpoint > V_wiper: keep this bit
         #    step = trial
 
-        if comp == 0:
+        if comp == 1:
             step = trial
         
     # Final write to leave DAC at the converged value
