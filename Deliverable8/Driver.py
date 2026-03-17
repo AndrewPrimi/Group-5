@@ -1,349 +1,337 @@
 """
-Driver.py  –  Function Generator UI
-=====================================
-Terminal UI (curses) for the SquareWaveGenerator.
+Driver.py  –  Function Generator LCD UI
+========================================
+LCD + rotary-encoder UI for the SquareWaveGenerator.
 
 Navigation:
-  ↑ / ↓      move selection
-  Enter / Spc  confirm
-  Q           quit from any menu
+  Rotate       →  move selection / adjust value
+  Short press  →  confirm / select
+  Hold 2 s     →  back / cancel
 
 Menu structure:
   Main
-  ├── Type
-  │     Square | Back | Main
-  ├── Frequency
-  │     Input Frequency | Back | Main
-  ├── Amplitude
-  │     Input Amplitude | Back | Main
+  ├── Type      (Square only)
+  ├── Frequency (rotary adjust, 100–10000 Hz, 10 Hz steps)
+  ├── Amplitude (rotary adjust, 0.0–10.0 V, 0.1 V steps)
   └── Output
-        On   → live display (press any key to return)
+        On   → live display (hold 2 s to return)
         Off
-        Back  (turns output OFF)
-        Main  (turns output OFF)
+        Back (turns output OFF)
 """
 
-import curses
+import pigpio
 import time
 
+import i2c_lcd
+import rotary_encoder
 from sqaure_wave import (
     SquareWaveGenerator,
     MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP,
 )
 
-# Sentinel return values for menu navigation
-_BACK = "__BACK__"
-_MAIN = "__MAIN__"
-_QUIT = "__QUIT__"
+# ── GPIO pin assignments ──────────────────────────────────────────────────────
+PIN_A          = 22
+PIN_B          = 27
+ROTARY_BTN_PIN = 17
+
+# ── Timing ────────────────────────────────────────────────────────────────────
+DEBOUNCE_US = 200_000     # 200 ms  – ignore repeat presses
+HOLD_US     = 2_000_000   # 2 s     – hold to go back
+
+AMP_STEP = 0.1            # V per encoder click
+
+# ── Initialise hardware ───────────────────────────────────────────────────────
+pi = pigpio.pi()
+if not pi.connected:
+    raise SystemExit("Cannot connect to pigpio daemon.  Run 'sudo pigpiod' first.")
+
+lcd = i2c_lcd.lcd(pi, width=20)
+gen = SquareWaveGenerator()
+
+for pin in (PIN_A, PIN_B):
+    pi.set_mode(pin, pigpio.INPUT)
+    pi.set_pull_up_down(pin, pigpio.PUD_UP)
+
+pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
+pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
+pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
+
+# ── Shared state ──────────────────────────────────────────────────────────────
+state = {
+    'wave_type':         'Square',
+    'frequency':         1000,
+    'amplitude':         0.0,
+    'output_on':         False,
+    'active_callbacks':  [],
+    'button_last_tick':  None,
+    'button_press_tick': None,
+    'button_pressed':    False,
+    'button_held':       False,
+    'encoder_delta':     0,
+}
 
 
-class FunctionGeneratorUI:
+# ── Callback helpers ──────────────────────────────────────────────────────────
 
-    def __init__(self):
-        self._gen        = None
-        self._wave_type  = "Square"
-        self._frequency  = 1000       # Hz
-        self._amplitude  = 0.0        # V
-        self._output_on  = False
+def clear_callbacks():
+    for cb in state['active_callbacks']:
+        cb.cancel()
+    state['active_callbacks'] = []
 
-    # ── Entry point ───────────────────────────────────────────────────────────
-    def run(self):
-        curses.wrapper(self._curses_main)
 
-    def _curses_main(self, scr):
-        curses.curs_set(0)
-        scr.keypad(True)
+def _button_cb(gpio, level, tick):
+    if level == 0:                          # press (falling edge)
+        last = state['button_last_tick']
+        if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
+            return
+        state['button_last_tick']  = tick
+        state['button_press_tick'] = tick
+    elif level == 1:                        # release (rising edge)
+        press_tick = state['button_press_tick']
+        if press_tick is not None:
+            if pigpio.tickDiff(press_tick, tick) >= HOLD_US:
+                state['button_held']    = True
+            else:
+                state['button_pressed'] = True
+            state['button_press_tick'] = None
 
-        if curses.has_colors():
-            curses.start_color()
-            curses.use_default_colors()
-            curses.init_pair(1, curses.COLOR_GREEN,  -1)   # ON / success
-            curses.init_pair(2, curses.COLOR_RED,    -1)   # OFF / error
-            curses.init_pair(3, curses.COLOR_YELLOW, -1)   # prompt / subtitle
-            curses.init_pair(4, curses.COLOR_CYAN,   -1)   # header
 
-        try:
-            self._gen = SquareWaveGenerator()
-        except RuntimeError as err:
-            scr.clear()
-            scr.addstr(0, 0, f"Hardware error: {err}")
-            scr.addstr(2, 0, "Press any key to exit.")
-            scr.refresh()
-            scr.getch()
+def _encoder_cb(direction):
+    state['encoder_delta'] += direction
+
+
+def _attach_callbacks():
+    decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, _encoder_cb)
+    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.BOTH_EDGES, _button_cb)
+    state['active_callbacks'] = [decoder, cb_btn]
+
+
+def _reset_input():
+    state['button_pressed'] = False
+    state['button_held']    = False
+    state['encoder_delta']  = 0
+
+
+# ── Menu helper ───────────────────────────────────────────────────────────────
+
+def pick_menu(title, options):
+    """
+    Scrolling 3-item menu on the 20x4 LCD.
+    Returns the selected option string, or 'Back' on hold.
+    """
+    idx = 0
+    _reset_input()
+
+    def _redraw():
+        window = max(0, min(idx - 1, len(options) - 3))
+        lcd.put_line(0, title[:20])
+        for row in range(3):
+            i = window + row
+            if i < len(options):
+                prefix = '>' if i == idx else ' '
+                lcd.put_line(row + 1, f"{prefix} {options[i]}"[:20])
+            else:
+                lcd.put_line(row + 1, '')
+
+    _redraw()
+    _attach_callbacks()
+
+    while True:
+        if state['encoder_delta'] != 0:
+            idx = (idx + state['encoder_delta']) % len(options)
+            state['encoder_delta'] = 0
+            _redraw()
+
+        if state['button_pressed']:
+            state['button_pressed'] = False
+            clear_callbacks()
+            return options[idx]
+
+        if state['button_held']:
+            state['button_held'] = False
+            clear_callbacks()
+            return 'Back'
+
+        time.sleep(0.02)
+
+
+# ── Value adjuster ────────────────────────────────────────────────────────────
+
+def adjust_value(title, value, min_val, max_val, step, fmt):
+    """
+    Rotary-encoder value adjuster.
+    Returns the confirmed value, or None if the user held to cancel.
+    """
+    _reset_input()
+
+    def _redraw():
+        lcd.put_line(0, title[:20])
+        lcd.put_line(1, fmt(value)[:20])
+        lcd.put_line(2, 'Turn to adjust'[:20])
+        lcd.put_line(3, 'Btn:OK  Hold:cancel')
+
+    _redraw()
+    _attach_callbacks()
+
+    while True:
+        if state['encoder_delta'] != 0:
+            value += state['encoder_delta'] * step
+            value  = max(min_val, min(max_val, value))
+            value  = round(round(value / step) * step, 10)
+            state['encoder_delta'] = 0
+            _redraw()
+
+        if state['button_pressed']:
+            state['button_pressed'] = False
+            clear_callbacks()
+            return value
+
+        if state['button_held']:
+            state['button_held'] = False
+            clear_callbacks()
+            return None
+
+        time.sleep(0.02)
+
+
+# ── Page runners ──────────────────────────────────────────────────────────────
+
+def run_type_menu():
+    while True:
+        choice = pick_menu(f"TYPE: {state['wave_type']}", ['Square', 'Back'])
+        if choice == 'Square':
+            state['wave_type'] = 'Square'
+            lcd.put_line(0, 'Type set: Square')
+            lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
+            time.sleep(0.8)
+            return
+        elif choice == 'Back':
             return
 
-        try:
-            self._menu_main(scr)
-        finally:
-            if self._gen:
-                self._gen.cleanup()
 
-    # ── Shared drawing helpers ────────────────────────────────────────────────
-    def _draw_status_bar(self, scr):
-        """Clear screen and draw the persistent top status bar."""
-        h, w = scr.getmaxyx()
-        scr.clear()
-
-        # Title
-        title = " FUNCTION GENERATOR "
-        hdr_attr = curses.color_pair(4) | curses.A_BOLD | curses.A_REVERSE \
-                   if curses.has_colors() else curses.A_BOLD | curses.A_REVERSE
-        scr.addstr(0, max(0, (w - len(title)) // 2), title, hdr_attr)
-
-        # Live parameter line
-        out_attr = (curses.color_pair(1) | curses.A_BOLD) if self._output_on \
-                   else (curses.color_pair(2) | curses.A_BOLD) \
-                   if curses.has_colors() else curses.A_BOLD
-        scr.addstr(2, 2, f"Type: {self._wave_type:<8}")
-        scr.addstr(2, 22, f"Freq: {self._frequency:>5} Hz")
-        scr.addstr(2, 40, f"Amp: +/-{self._amplitude:4.1f} V")
-        scr.addstr(2, 58, "Output: ")
-        scr.addstr(2, 66, "ON " if self._output_on else "OFF", out_attr)
-
-        scr.addstr(3, 0, "─" * max(0, w - 1))
-
-    def _pick_menu(self, scr, title, options, subtitle=""):
-        """
-        Arrow-key menu.  Returns the label of the chosen option, or
-        _BACK / _MAIN / _QUIT for those navigation items.
-        """
-        idx = 0
-        while True:
-            self._draw_status_bar(scr)
-            h, w = scr.getmaxyx()
-
-            scr.addstr(5, 2, title, curses.A_BOLD)
-            if subtitle:
-                sub_attr = curses.color_pair(3) if curses.has_colors() \
-                           else curses.A_NORMAL
-                scr.addstr(6, 2, subtitle, sub_attr)
-
-            row0 = 8 if subtitle else 7
-            for i, opt in enumerate(options):
-                if row0 + i >= h - 2:
-                    break
-                if i == idx:
-                    scr.addstr(row0 + i, 4, f" > {opt} ",
-                               curses.A_REVERSE | curses.A_BOLD)
-                else:
-                    scr.addstr(row0 + i, 4, f"   {opt}")
-
-            hint_row = row0 + len(options) + 1
-            if hint_row < h - 1:
-                scr.addstr(hint_row, 2,
-                           "UP/DOWN: navigate    ENTER: select    Q: quit")
-            scr.refresh()
-
-            key = scr.getch()
-            if key in (curses.KEY_UP, ord('k')):
-                idx = (idx - 1) % len(options)
-            elif key in (curses.KEY_DOWN, ord('j')):
-                idx = (idx + 1) % len(options)
-            elif key in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord(' ')):
-                sel = options[idx]
-                if sel == "Back":
-                    return _BACK
-                if sel == "Main":
-                    return _MAIN
-                return sel
-            elif key in (ord('q'), ord('Q')):
-                return _QUIT
-
-    def _prompt_input(self, scr, label, row=8):
-        """Show a text prompt and return the entered string."""
-        self._draw_status_bar(scr)
-        h, w = scr.getmaxyx()
-        scr.addstr(row,     2, label,
-                   curses.color_pair(3) if curses.has_colors() else curses.A_NORMAL)
-        scr.addstr(row + 1, 2, "> ")
-        curses.echo()
-        curses.curs_set(1)
-        scr.refresh()
-        try:
-            raw = scr.getstr(row + 1, 4, 20)
-            return raw.decode("utf-8", errors="ignore").strip()
-        except Exception:
-            return ""
-        finally:
-            curses.noecho()
-            curses.curs_set(0)
-
-    def _flash(self, scr, msg, row=10, color=1, delay=1.2):
-        """Display a short timed message then return."""
-        attr = curses.color_pair(color) if curses.has_colors() else curses.A_NORMAL
-        scr.addstr(row, 2, msg, attr)
-        scr.refresh()
-        time.sleep(delay)
-
-    # ── Top-level menu ────────────────────────────────────────────────────────
-    def _menu_main(self, scr):
-        while True:
-            choice = self._pick_menu(
-                scr, "MAIN MENU",
-                ["Type", "Frequency", "Amplitude", "Output", "Quit"],
-            )
-            if choice == "Type":
-                self._menu_type(scr)
-            elif choice == "Frequency":
-                self._menu_frequency(scr)
-            elif choice == "Amplitude":
-                self._menu_amplitude(scr)
-            elif choice == "Output":
-                self._menu_output(scr)
-            elif choice in ("Quit", _BACK, _MAIN, _QUIT):
-                if self._output_on:
-                    self._gen.stop()
-                    self._output_on = False
-                return
-
-    # ── Type menu ─────────────────────────────────────────────────────────────
-    def _menu_type(self, scr):
-        while True:
-            choice = self._pick_menu(
-                scr, "TYPE",
-                ["Square", "Back", "Main"],
-                subtitle=f"Current: {self._wave_type}",
-            )
-            if choice == "Square":
-                self._wave_type = "Square"
-                self._flash(scr, "Wave type set to Square.", color=1)
-            elif choice in (_BACK, _MAIN, _QUIT):
-                return
-
-    # ── Frequency menu ────────────────────────────────────────────────────────
-    def _menu_frequency(self, scr):
-        while True:
-            sub = (f"Current: {self._frequency} Hz  "
-                   f"[{MIN_FREQ} – {MAX_FREQ} Hz, step {FREQ_STEP} Hz]")
-            choice = self._pick_menu(
-                scr, "FREQUENCY",
-                ["Input Frequency", "Back", "Main"],
-                subtitle=sub,
-            )
-            if choice == "Input Frequency":
-                self._input_frequency(scr)
-            elif choice in (_BACK, _MAIN, _QUIT):
-                return
-
-    def _input_frequency(self, scr):
-        raw = self._prompt_input(
-            scr,
-            f"Enter frequency ({MIN_FREQ}–{MAX_FREQ} Hz, {FREQ_STEP} Hz steps):",
+def run_frequency_menu():
+    while True:
+        choice = pick_menu(
+            f"FREQ: {state['frequency']}Hz",
+            ['Adjust', 'Back'],
         )
-        try:
-            freq = int(raw)
-            freq = int(round(freq / FREQ_STEP) * FREQ_STEP)
-            freq = max(MIN_FREQ, min(MAX_FREQ, freq))
-            self._frequency = freq
-            self._gen.set_frequency(freq)
-            self._flash(scr, f"Frequency set to {freq} Hz.", color=1)
-        except ValueError:
-            self._flash(scr, "Invalid input — frequency unchanged.", color=2)
-
-    # ── Amplitude menu ────────────────────────────────────────────────────────
-    def _menu_amplitude(self, scr):
-        while True:
-            sub = (f"Current: +/-{self._amplitude:.1f} V  "
-                   f"[0.0 – {MAX_AMP:.1f} V]")
-            choice = self._pick_menu(
-                scr, "AMPLITUDE",
-                ["Input Amplitude", "Back", "Main"],
-                subtitle=sub,
+        if choice == 'Adjust':
+            new_val = adjust_value(
+                'FREQUENCY',
+                float(state['frequency']),
+                MIN_FREQ, MAX_FREQ, FREQ_STEP,
+                lambda v: f"{int(v)} Hz",
             )
-            if choice == "Input Amplitude":
-                self._input_amplitude(scr)
-            elif choice in (_BACK, _MAIN, _QUIT):
-                return
+            if new_val is not None:
+                state['frequency'] = int(new_val)
+                gen.set_frequency(state['frequency'])
+        elif choice == 'Back':
+            return
 
-    def _input_amplitude(self, scr):
-        raw = self._prompt_input(
-            scr,
-            f"Enter amplitude 0.0 – {MAX_AMP:.1f} V  (output will swing +/- V):",
+
+def run_amplitude_menu():
+    while True:
+        choice = pick_menu(
+            f"AMP: +/-{state['amplitude']:.1f}V",
+            ['Adjust', 'Back'],
         )
-        try:
-            amp = float(raw)
-            amp = max(0.0, min(MAX_AMP, amp))
-            self._amplitude = amp
-            self._gen.set_amplitude(amp)
-            self._flash(scr, f"Amplitude set to +/-{amp:.1f} V.", color=1)
-        except ValueError:
-            self._flash(scr, "Invalid input — amplitude unchanged.", color=2)
-
-    # ── Output menu ───────────────────────────────────────────────────────────
-    def _menu_output(self, scr):
-        while True:
-            sub = "Status: ON" if self._output_on else "Status: OFF"
-            choice = self._pick_menu(
-                scr, "OUTPUT",
-                ["On", "Off", "Back", "Main"],
-                subtitle=sub,
+        if choice == 'Adjust':
+            new_val = adjust_value(
+                'AMPLITUDE',
+                state['amplitude'],
+                0.0, MAX_AMP, AMP_STEP,
+                lambda v: f"+/- {v:.1f} V",
             )
-            if choice == "On":
-                self._gen.set_frequency(self._frequency)
-                self._gen.set_amplitude(self._amplitude)
-                self._gen.start()
-                self._output_on = True
-                self._live_display(scr)          # blocks until user presses a key
-            elif choice == "Off":
-                self._gen.stop()
-                self._output_on = False
-            elif choice in (_BACK, _MAIN, _QUIT):
-                # Requirement: backing out of Output must turn off by default
-                if self._output_on:
-                    self._gen.stop()
-                    self._output_on = False
-                return
+            if new_val is not None:
+                state['amplitude'] = round(new_val, 1)
+                gen.set_amplitude(state['amplitude'])
+        elif choice == 'Back':
+            return
 
-    # ── Live output display ───────────────────────────────────────────────────
-    def _live_display(self, scr):
-        """
-        Full-screen live readout shown while the output is ON.
-        Refreshes every 250 ms.  Any keypress returns to the Output menu.
-        The output remains ON after returning (user can turn it off via "Off").
-        """
-        scr.nodelay(True)
-        try:
-            while True:
-                h, w = scr.getmaxyx()
-                scr.clear()
 
-                # Header
-                title = " LIVE OUTPUT "
-                hdr_attr = (curses.color_pair(1) | curses.A_BOLD | curses.A_REVERSE) \
-                            if curses.has_colors() else (curses.A_BOLD | curses.A_REVERSE)
-                scr.addstr(0, max(0, (w - len(title)) // 2), title, hdr_attr)
+def run_live_display():
+    """Live readout while output is ON.  Hold button 2 s to return."""
+    _reset_input()
 
-                # Box
-                r = 2
-                box_w = 38
-                period_ms  = 1000.0 / self._frequency
-                pk_pk      = 2 * self._amplitude
+    def _redraw():
+        period_ms = 1000.0 / state['frequency']
+        pk_pk     = 2 * state['amplitude']
+        lcd.put_line(0, f"LIVE OUT  {state['frequency']}Hz")
+        lcd.put_line(1, f"Amp:+/-{state['amplitude']:.1f}V Pk:{pk_pk:.1f}V")
+        lcd.put_line(2, f"T:{period_ms:.2f}ms  DC:50%")
+        lcd.put_line(3, 'Hold btn: back')
 
-                scr.addstr(r,     2, "+" + "─" * (box_w - 2) + "+")
-                scr.addstr(r + 1, 2, f"| {'STATUS':12}  {'● ACTIVE':>20} |",
-                           curses.color_pair(1) | curses.A_BOLD
-                           if curses.has_colors() else curses.A_BOLD)
-                scr.addstr(r + 2, 2, f"| {'Type':12}  {self._wave_type:>20} |")
-                scr.addstr(r + 3, 2, f"| {'Frequency':12}  {str(self._frequency) + ' Hz':>20} |")
-                scr.addstr(r + 4, 2, f"| {'Amplitude':12}  {f'+/-{self._amplitude:.2f} V':>20} |")
-                scr.addstr(r + 5, 2, f"| {'Pk-Pk':12}  {f'{pk_pk:.2f} V':>20} |")
-                scr.addstr(r + 6, 2, f"| {'Period':12}  {f'{period_ms:.4f} ms':>20} |")
-                scr.addstr(r + 7, 2, f"| {'Duty Cycle':12}  {'50 %':>20} |")
-                scr.addstr(r + 8, 2, "+" + "─" * (box_w - 2) + "+")
+    _redraw()
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.BOTH_EDGES, _button_cb)
+    state['active_callbacks'] = [cb_btn]
 
-                scr.addstr(r + 10, 2, "Press any key to return to Output menu…")
-                scr.refresh()
+    last_refresh = time.time()
+    while True:
+        if time.time() - last_refresh >= 0.25:
+            _redraw()
+            last_refresh = time.time()
 
-                key = scr.getch()
-                if key != -1:
-                    break
+        if state['button_held']:
+            state['button_held'] = False
+            clear_callbacks()
+            return
 
-                time.sleep(0.25)
-        finally:
-            scr.nodelay(False)
+        time.sleep(0.02)
+
+
+def run_output_menu():
+    while True:
+        status = 'ON' if state['output_on'] else 'OFF'
+        choice = pick_menu(f"OUTPUT: {status}", ['On', 'Off', 'Back'])
+        if choice == 'On':
+            gen.set_frequency(state['frequency'])
+            gen.set_amplitude(state['amplitude'])
+            gen.start()
+            state['output_on'] = True
+            run_live_display()
+        elif choice == 'Off':
+            gen.stop()
+            state['output_on'] = False
+        elif choice == 'Back':
+            if state['output_on']:
+                gen.stop()
+                state['output_on'] = False
+            return
+
+
+def run_main_menu():
+    while True:
+        choice = pick_menu(
+            'FUNC GENERATOR',
+            ['Type', 'Frequency', 'Amplitude', 'Output', 'Quit'],
+        )
+        if choice == 'Type':
+            run_type_menu()
+        elif choice == 'Frequency':
+            run_frequency_menu()
+        elif choice == 'Amplitude':
+            run_amplitude_menu()
+        elif choice == 'Output':
+            run_output_menu()
+        elif choice in ('Quit', 'Back'):
+            if state['output_on']:
+                gen.stop()
+            lcd.put_line(0, 'Goodbye!')
+            lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
+            return
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    ui = FunctionGeneratorUI()
-    ui.run()
+print("Starting Deliverable 8 driver...")
+
+try:
+    run_main_menu()
+except KeyboardInterrupt:
+    print("\nStopping...")
+finally:
+    if state['output_on']:
+        gen.stop()
+    gen.cleanup()
+    clear_callbacks()
+    lcd.close()
+    pi.stop()
