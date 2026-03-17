@@ -89,7 +89,7 @@ def _write_dac(pi, spi_handle, step):
     # 3. Write to the MCP4131
     # 0x00 is the write command for the volatile wiper
     pi.spi_write(spi_handle, [0x00, wiper_value])
-    #return (R_REF_OHMS)(step) / (wiper_value)
+    return (R_REF_OHMS)(step) / (wiper_value)
 
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
 
