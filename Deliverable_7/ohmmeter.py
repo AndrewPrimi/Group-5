@@ -33,12 +33,6 @@ Tolerance sources:
 
 import time
 import math
-nums = {
-    0: 31, 1: 30, 2: 29, 3: 28, 4: 27, 5: 26, 6: 25, 7: 24, 
-    8: 23, 9: 22, 10: 21, 11: 20, 12: 19, 13: 18, 14: 17, 15: 16 , 
-    31: 0, 30: 1, 29: 2, 28: 3, 27: 4, 26: 5, 25: 6, 24: 7, 
-    23: 8, 22: 9, 21: 10, 20: 11, 19: 12, 18: 13, 17: 14, 16: 15
-}
 
 # ── Hardware constants ────────────────────────────────────────────────────────
 ADC_SPI_CHANNEL   = 1          # SPI CE1 (GPIO 7) for the MCP4131 DAC
@@ -76,20 +70,8 @@ def close_adc(pi, spi_handle):
 
 def _write_dac(pi, spi_handle, step):
     # Scale the 5-bit SAR step (0-31) to the MCP4131's 7-bit register (0-127)
-    # Assuming your dictionary is defined as:
-    # nums = {i: 31 - i for i in range(16)}
-
-    # 1. Constrain the step to be within your dictionary keys (0-15)
-    # Using 15 here because your dictionary ends at 15
-    step = max(0, min(step, 31))
-
-    # 2. Look up the specific value from your dictionary
-    wiper_value = nums[step]
-
-    # 3. Write to the MCP4131
-    # 0x00 is the write command for the volatile wiper
-    pi.spi_write(spi_handle, [0x00, wiper_value])
-    return (R_REF_OHMS)(step) / (wiper_value)
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
 
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
 
