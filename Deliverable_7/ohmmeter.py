@@ -75,16 +75,10 @@ def _write_dac(pi, spi_handle, step):
       Byte 0: 0x00  (address=0, cmd=write, D8=0 — steps 0–31 fit in 8 bits)
       Byte 1: step value (0–31)
     """
-
-    #step = max(0, min(step, MCP4131_MAX_STEPS))
-    #pi.spi_write(spi_handle, [0x00, step])  
-    
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
-    value = int(round(step * 127 / MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, value])
+    pi.spi_write(spi_handle, [0x00, int(round(step * 127 / MCP4131_MAX_STEPS))])
 
-
+    
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
 
 def sar_measure(pi, spi_handle, comp_pin):
@@ -101,14 +95,18 @@ def sar_measure(pi, spi_handle, comp_pin):
     """
     step = 0
     for bit_pos in range(4, -1, -1):   # bits 4 down to 0  (2^4=16 … 2^0=1)
-        trial = step | (1 << bit_pos)
+        #trial = step | (1 << bit_pos)
+        trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
         comp = pi.read(comp_pin)
         
-        if comp == 1:                  # V_midpoint > V_wiper: keep this bit
-            step = trial
+        #if comp == 1:                  # V_midpoint > V_wiper: keep this bit
+        #    step = trial
 
+        if comp == 0:
+            step = trial
+        
     # Final write to leave DAC at the converged value
     _write_dac(pi, spi_handle, step)
     return step
