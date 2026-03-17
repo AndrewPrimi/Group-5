@@ -86,7 +86,7 @@ setup_callbacks(state, pi, lcd)
 print("Starting...")
 try:
     while True:
-
+        print("I AM RUNNING")
         # main page
         state['isMainPage'] = True
         state['menu_selection'] = 0
