@@ -118,17 +118,17 @@ def averaged_measure(pi, spi_handle, comp_pin, n=5):
 def step_to_resistance(step):
     """Convert a DAC step to external resistance in ohms.
 
-    From voltage divider:
-        V_mid / V_supply  =  R_ext / (R_REF + R_ext)  =  step / MAX_STEPS
+    From voltage divider (SAR converges to complement step):
+        V_mid / V_supply  =  R_ext / (R_REF + R_ext)  =  (MAX_STEPS - step) / MAX_STEPS
 
     Solving for R_ext:
-        R_ext  =  R_REF * step / (MAX_STEPS - step)
+        R_ext  =  R_REF * (MAX_STEPS - step) / step
     """
     if step <= 0:
-        return 0.0
-    if step >= MCP4131_MAX_STEPS:
         return float('inf')
-    return R_REF_OHMS * step / (MCP4131_MAX_STEPS - step)
+    if step >= MCP4131_MAX_STEPS:
+        return 0.0
+    return R_REF_OHMS * (MCP4131_MAX_STEPS - step) / step
 
 
 def tolerance(step):
@@ -149,7 +149,7 @@ def tolerance(step):
         #return 0.0
 
     r_ext = step_to_resistance(step)
-    denom = (MCP4131_MAX_STEPS - step) ** 2
+    denom = step ** 2
     quant_tol = 0.5 * R_REF_OHMS * MCP4131_MAX_STEPS / denom
     ref_tol   = r_ext * R_REF_TOLERANCE_PCT
     return math.sqrt(quant_tol ** 2 + ref_tol ** 2)
