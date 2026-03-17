@@ -104,7 +104,7 @@ def sar_measure(pi, spi_handle, comp_pin):
         #if comp == 1:                  # V_midpoint > V_wiper: keep this bit
         #    step = trial
 
-        if comp == 0:
+        if comp == 1:
             step = trial
         
     # Final write to leave DAC at the converged value
