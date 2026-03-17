@@ -9,7 +9,8 @@ preset values, and two functions that convert between ohms and step values.
 # ── Potentiometer range ──────────────────────────────────
 MINIMUM_OHMS = 100        # lowest settable resistance (ohms)
 MAXIMUM_OHMS = 10000      # full-scale resistance (ohms)
-MAX_STEPS = 128           # 7-bit wiper: 0 to 128 inclusive
+#MAX_STEPS = 128           # 7-bit wiper: 0 to 128 inclusive
+MAX_STEPS = 31            # 5-bit wiper: 0 to 31 inclusive???
 DEFAULT_OHMS = 5000       # starting resistance on page load
 
 # ── Debounce ─────────────────────────────────────────────
