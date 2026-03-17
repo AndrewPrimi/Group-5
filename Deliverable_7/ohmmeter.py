@@ -76,13 +76,13 @@ def _write_dac(pi, spi_handle, step):
       Byte 1: step value (0–31)
     """
 
-    step = max(0, min(step, MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, step])  
-    
     #step = max(0, min(step, MCP4131_MAX_STEPS))
-    #pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
-    #value = int(round(step * 127 / MCP4131_MAX_STEPS))
-    #pi.spi_write(spi_handle, [0x00, value])
+    #pi.spi_write(spi_handle, [0x00, step])  
+    
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
+    value = int(round(step * 127 / MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, value])
 
 
 # ── SAR algorithm ─────────────────────────────────────────────────────────────
