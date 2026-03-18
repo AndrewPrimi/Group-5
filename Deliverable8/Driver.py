@@ -70,8 +70,8 @@ if not pi.connected:
     raise SystemExit("Cannot connect to pigpio daemon.  Run 'sudo pigpiod' first.")
 
 lcd       = i2c_lcd.lcd(pi, width=20)
-gen       = SquareWaveGenerator()
 spi_dc    = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
+gen       = SquareWaveGenerator(pi, spi_dc)
 dc_ref    = DCReferenceGenerator(pi, spi_dc)
 spi_vm    = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
 voltmeter = SAR_ADC(pi, spi_vm, COMPARATOR_PIN)
