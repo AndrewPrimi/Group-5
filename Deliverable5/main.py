@@ -147,9 +147,9 @@ try:
                 state['ohms'] = DEFAULT_OHMS
                 isPowerOnFirstTime = True
             else:
-                if _s['selected_pot'] == 0:
+                if state['selected_pot'] == 0:
                     state['ohms'] = pot_1
-                elif _s['selected_pot'] == 1:
+                elif state['selected_pot'] == 1:
                     state['ohms'] = pot_2
                 
             step = ohms_to_step(state['ohms'])
@@ -178,9 +178,9 @@ try:
                             state['ohms'] = DEFAULT_OHMS
                             isPowerOnFirstTime = True
                         else:
-                            if _s['selected_pot'] == 0:
+                            if state['selected_pot'] == 0:
                                 state['ohms'] = pot_1
-                            elif _s['selected_pot'] == 1:
+                            elif state['selected_pot'] == 1:
                                 state['ohms'] = pot_2
 
                         state['button_press_tick'] = None

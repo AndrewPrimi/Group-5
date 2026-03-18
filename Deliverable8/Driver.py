@@ -1,7 +1,7 @@
 """
 Driver.py  –  Function Generator LCD UI
 ========================================
-LCD + rotary-encoder UI for the SquareWaveGenerator.
+LCD + rotary-encoder UI for the SquareWaveGenerator and DCReferenceGenerator.
 
 Navigation:
   Rotate       →  move selection / adjust value
@@ -13,10 +13,17 @@ Menu structure:
   ├── Type      (Square only)
   ├── Frequency (rotary adjust, 100–10000 Hz, 10 Hz steps)
   ├── Amplitude (rotary adjust, 0.0–10.0 V, 0.1 V steps)
-  └── Output
-        On   → live display (hold 2 s to return)
-        Off
-        Back (turns output OFF)
+  ├── Output
+  │     On   → live display (hold 2 s to return)
+  │     Off
+  │     Back (turns output OFF)
+  └── DC Reference
+        Voltage  (rotary adjust, 0.0–5.0 V, 0.1 V steps)
+        Output
+          On   → live display w/ voltmeter (hold 2 s or Back/Main turns OFF)
+          Off
+          Back (turns DC output OFF, returns to DC Reference menu)
+          Main (turns DC output OFF, returns to Main menu)
 """
 
 import pigpio
@@ -28,6 +35,8 @@ from sqaure_wave import (
     SquareWaveGenerator,
     MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP,
 )
+from dc_reference import DCReferenceGenerator
+from sar_logic import SAR_ADC
 
 # ── GPIO pin assignments ──────────────────────────────────────────────────────
 PIN_A          = 22
@@ -40,13 +49,28 @@ HOLD_US     = 2_000_000   # 2 s     – hold to go back
 
 AMP_STEP = 0.1            # V per encoder click
 
+# ── DC Reference constants ────────────────────────────────────────────────────
+MIN_DC_VOLT  = 0.0
+MAX_DC_VOLT  = 5.0
+DC_VOLT_STEP = 0.1
+
+# ── Voltmeter (SAR ADC) constants ─────────────────────────────────────────────
+COMPARATOR_PIN = 24
+VREF           = 5.0
+VM_SPI_CHANNEL = 1
+VM_SPI_SPEED   = 50_000
+VM_SPI_FLAGS   = 0
+
 # ── Initialise hardware ───────────────────────────────────────────────────────
 pi = pigpio.pi()
 if not pi.connected:
     raise SystemExit("Cannot connect to pigpio daemon.  Run 'sudo pigpiod' first.")
 
-lcd = i2c_lcd.lcd(pi, width=20)
-gen = SquareWaveGenerator()
+lcd      = i2c_lcd.lcd(pi, width=20)
+gen      = SquareWaveGenerator()
+dc_ref   = DCReferenceGenerator()
+spi_vm   = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
+voltmeter = SAR_ADC(pi, spi_vm, COMPARATOR_PIN)
 
 for pin in (PIN_A, PIN_B):
     pi.set_mode(pin, pigpio.INPUT)
@@ -62,6 +86,8 @@ state = {
     'frequency':         1000,
     'amplitude':         0.0,
     'output_on':         False,
+    'dc_voltage':        0.0,
+    'dc_output_on':      False,
     'active_callbacks':  [],
     'button_last_tick':  None,
     'button_press_tick': None,
@@ -299,11 +325,109 @@ def run_output_menu():
             return
 
 
+def run_dc_live_display():
+    """Live DC output readout with voltmeter.  Hold button 2 s to return."""
+    _reset_input()
+
+    def _redraw():
+        measured, _ = voltmeter.read_voltage(VREF)
+        lcd.put_line(0, f"DC REF ON  Set:{state['dc_voltage']:.1f}V")
+        lcd.put_line(1, f"Measured: {measured:.2f} V")
+        lcd.put_line(2, '')
+        lcd.put_line(3, 'Hold btn: back')
+
+    _redraw()
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
+    state['active_callbacks'] = [cb_btn]
+
+    last_refresh = time.time()
+    while True:
+        if time.time() - last_refresh >= 0.25:
+            _redraw()
+            last_refresh = time.time()
+
+        if state['button_held']:
+            state['button_held'] = False
+            clear_callbacks()
+            return
+
+        time.sleep(0.02)
+
+
+def run_dc_voltage_menu():
+    while True:
+        choice = pick_menu(
+            f"DC VOLT: {state['dc_voltage']:.1f}V",
+            ['Adjust', 'Back'],
+        )
+        if choice == 'Adjust':
+            new_val = adjust_value(
+                'DC VOLTAGE',
+                state['dc_voltage'],
+                MIN_DC_VOLT, MAX_DC_VOLT, DC_VOLT_STEP,
+                lambda v: f"{v:.1f} V",
+            )
+            if new_val is not None:
+                state['dc_voltage'] = round(new_val, 1)
+                if state['dc_output_on']:
+                    dc_ref.set_voltage(state['dc_voltage'])
+        elif choice == 'Back':
+            return
+
+
+def run_dc_output_menu():
+    """
+    Returns True if the user chose 'Main' (caller should return to main menu),
+    False otherwise.
+    """
+    while True:
+        status = 'ON' if state['dc_output_on'] else 'OFF'
+        choice = pick_menu(f"DC OUTPUT: {status}", ['On', 'Off', 'Back', 'Main'])
+        if choice == 'On':
+            dc_ref.set_voltage(state['dc_voltage'])
+            dc_ref.start()
+            state['dc_output_on'] = True
+            run_dc_live_display()
+            # returning from live display (hold) turns output off
+            dc_ref.stop()
+            state['dc_output_on'] = False
+        elif choice == 'Off':
+            dc_ref.stop()
+            state['dc_output_on'] = False
+        elif choice == 'Back':
+            if state['dc_output_on']:
+                dc_ref.stop()
+                state['dc_output_on'] = False
+            return False
+        elif choice == 'Main':
+            if state['dc_output_on']:
+                dc_ref.stop()
+                state['dc_output_on'] = False
+            return True
+
+
+def run_dc_reference_menu():
+    """Returns True if the user navigated directly to Main."""
+    while True:
+        choice = pick_menu('DC REFERENCE', ['Voltage', 'Output', 'Back'])
+        if choice == 'Voltage':
+            run_dc_voltage_menu()
+        elif choice == 'Output':
+            go_main = run_dc_output_menu()
+            if go_main:
+                return True
+        elif choice == 'Back':
+            if state['dc_output_on']:
+                dc_ref.stop()
+                state['dc_output_on'] = False
+            return False
+
+
 def run_main_menu():
     while True:
         choice = pick_menu(
             'FUNC GENERATOR',
-            ['Type', 'Frequency', 'Amplitude', 'Output', 'Quit'],
+            ['Type', 'Frequency', 'Amplitude', 'Output', 'DC Reference', 'Quit'],
         )
         if choice == 'Type':
             run_type_menu()
@@ -313,9 +437,13 @@ def run_main_menu():
             run_amplitude_menu()
         elif choice == 'Output':
             run_output_menu()
+        elif choice == 'DC Reference':
+            run_dc_reference_menu()
         elif choice in ('Quit', 'Back'):
             if state['output_on']:
                 gen.stop()
+            if state['dc_output_on']:
+                dc_ref.stop()
             lcd.put_line(0, 'Goodbye!')
             lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
             return
@@ -331,7 +459,11 @@ except KeyboardInterrupt:
 finally:
     if state['output_on']:
         gen.stop()
+    if state['dc_output_on']:
+        dc_ref.stop()
     gen.cleanup()
+    dc_ref.cleanup()
+    pi.spi_close(spi_vm)
     clear_callbacks()
     lcd.close()
     pi.stop()
