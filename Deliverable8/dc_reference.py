@@ -7,11 +7,11 @@ Calibration endpoints supplied by hardware team:
   Voltage  |  W0 step  |  W1 step
   ---------+-----------+---------
    +5.0 V  |    127    |    49
-   -5.0 V  |     63    |   127
+   -5.0 V  |     65    |   127
 
 Linear interpolation gives:
   t  = (voltage + 5.0) / 10.0        # 0.0 at -5 V, 1.0 at +5 V
-  W0 = round(63  + 64 * t)
+  W0 = round(65  + 62 * t)
   W1 = round(127 - 78 * t)
 
 SPI command bytes (MCP4231):
@@ -29,7 +29,7 @@ def _volt_to_steps(voltage):
     """Return (w0_step, w1_step) for a voltage in [-5.0, +5.0] V."""
     voltage = max(MIN_VOLT, min(MAX_VOLT, voltage))
     t  = (voltage + 5.0) / 10.0
-    w0 = round(63  + 64 * t)
+    w0 = round(65  + 62 * t)
     w1 = round(127 - 78 * t)
     return w0, w1
 
