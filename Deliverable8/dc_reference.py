@@ -2,11 +2,14 @@
 dc_reference.py – Dual-channel DC voltage reference via MCP4231 digital pot.
 
 The MCP4231 has two independent wiper channels (Pot 0 and Pot 1).
-Each is set to produce 0–5 V.  Wired additively on the PCB, the two
-channels together span 0–10 V.
+Each produces 0–5 V.  Wired additively on the PCB they span 0–10 V.
 
-Crucially, writing to one wiper register NEVER touches the other —
-each channel's voltage is stored and applied independently.
+The user supplies a single target voltage (0–10 V).  set_total_voltage()
+splits it across the two pots automatically:
+  Pot 0 carries min(target, 5.0) V
+  Pot 1 carries max(0, target - 5.0) V
+
+Crucially, writing to one wiper register NEVER touches the other.
 
 SPI command bytes (MCP4231):
   Pot 0 write: 0x00  <step>
@@ -50,32 +53,30 @@ class DCReferenceGenerator:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def set_voltage(self, voltage, pot):
+    def set_total_voltage(self, voltage):
         """
-        Store and apply a voltage to one pot channel.
-        The other pot's wiper is not written.
+        Set a single target voltage (0–10 V).
+        Splits automatically: Pot 0 takes 0–5 V, Pot 1 takes the remainder.
+        Only writes to a pot's wiper if that pot is currently running.
         """
-        self._voltages[pot] = max(MIN_VOLT, min(MAX_VOLT, voltage))
-        if self._running[pot]:
-            self._write_pot(pot, _volt_to_step(self._voltages[pot]))
-
-    def start(self, pot):
-        """Enable output on one pot channel at its stored voltage."""
-        self._running[pot] = True
-        self._write_pot(pot, _volt_to_step(self._voltages[pot]))
-
-    def stop(self, pot):
-        """Zero one pot channel's wiper — the other is untouched."""
-        self._running[pot] = False
-        self._write_pot(pot, 0)
+        voltage = max(0.0, min(MAX_VOLT * 2, voltage))
+        self._voltages[0] = min(MAX_VOLT, voltage)
+        self._voltages[1] = max(0.0, voltage - MAX_VOLT)
+        for pot in (0, 1):
+            if self._running[pot]:
+                self._write_pot(pot, _volt_to_step(self._voltages[pot]))
 
     def start_all(self):
+        """Enable both pot outputs at their stored voltages."""
         for pot in (0, 1):
-            self.start(pot)
+            self._running[pot] = True
+            self._write_pot(pot, _volt_to_step(self._voltages[pot]))
 
     def stop_all(self):
+        """Zero both pot wipers."""
         for pot in (0, 1):
-            self.stop(pot)
+            self._running[pot] = False
+            self._write_pot(pot, 0)
 
     def cleanup(self):
         self.stop_all()

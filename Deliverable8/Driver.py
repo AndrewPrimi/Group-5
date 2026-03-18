@@ -51,8 +51,8 @@ AMP_STEP = 0.1            # V per encoder click
 
 # ── DC Reference constants ────────────────────────────────────────────────────
 MIN_DC_VOLT  = 0.0
-MAX_DC_VOLT  = 5.0
-DC_VOLT_STEP = 0.1
+MAX_DC_VOLT  = 10.0
+DC_VOLT_STEP = 0.625
 DC_SPI_CHANNEL = 0
 DC_SPI_SPEED   = 50_000
 DC_SPI_FLAGS   = 0
@@ -90,7 +90,7 @@ state = {
     'frequency':         1000,
     'amplitude':         0.0,
     'output_on':         False,
-    'dc_voltages':       [0.0, 0.0],   # independent voltage per pot
+    'dc_voltage':        0.0,
     'dc_output_on':      False,
     'active_callbacks':  [],
     'button_last_tick':  None,
@@ -335,11 +335,9 @@ def run_dc_live_display():
 
     def _redraw():
         measured, _ = voltmeter.read_voltage(VREF)
-        v0 = state['dc_voltages'][0]
-        v1 = state['dc_voltages'][1]
-        lcd.put_line(0, f"DC REF ON")
-        lcd.put_line(1, f"P1:{v0:.1f}V  P2:{v1:.1f}V")
-        lcd.put_line(2, f"Measured: {measured:.2f} V")
+        lcd.put_line(0, 'DC REF ON')
+        lcd.put_line(1, f"Set:  {state['dc_voltage']:.3f} V")
+        lcd.put_line(2, f"Meas: {measured:.2f} V")
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
@@ -360,26 +358,22 @@ def run_dc_live_display():
         time.sleep(0.02)
 
 
-def run_dc_voltage_menu(pot):
-    """Adjust the voltage for one pot channel independently."""
-    label = f"POT {pot + 1} VOLT"
+def run_dc_voltage_menu():
     while True:
-        current = state['dc_voltages'][pot]
         choice = pick_menu(
-            f"P{pot + 1} VOLT: {current:.1f}V",
+            f"DC VOLT: {state['dc_voltage']:.3f}V",
             ['Adjust', 'Back'],
         )
         if choice == 'Adjust':
             new_val = adjust_value(
-                label,
-                state['dc_voltages'][pot],
+                'DC VOLTAGE (0-10V)',
+                state['dc_voltage'],
                 MIN_DC_VOLT, MAX_DC_VOLT, DC_VOLT_STEP,
-                lambda v: f"{v:.1f} V",
+                lambda v: f"{v:.3f} V",
             )
             if new_val is not None:
-                state['dc_voltages'][pot] = round(new_val, 1)
-                # only this pot's wiper is written; the other is untouched
-                dc_ref.set_voltage(state['dc_voltages'][pot], pot)
+                state['dc_voltage'] = round(new_val, 3)
+                dc_ref.set_total_voltage(state['dc_voltage'])
         elif choice == 'Back':
             return
 
@@ -393,8 +387,7 @@ def run_dc_output_menu():
         status = 'ON' if state['dc_output_on'] else 'OFF'
         choice = pick_menu(f"DC OUTPUT: {status}", ['On', 'Off', 'Back', 'Main'])
         if choice == 'On':
-            for pot in (0, 1):
-                dc_ref.set_voltage(state['dc_voltages'][pot], pot)
+            dc_ref.set_total_voltage(state['dc_voltage'])
             dc_ref.start_all()
             state['dc_output_on'] = True
             run_dc_live_display()
@@ -419,11 +412,9 @@ def run_dc_output_menu():
 def run_dc_reference_menu():
     """Returns True if the user navigated directly to Main."""
     while True:
-        choice = pick_menu('DC REFERENCE', ['Pot 1 Voltage', 'Pot 2 Voltage', 'Output', 'Back'])
-        if choice == 'Pot 1 Voltage':
-            run_dc_voltage_menu(0)
-        elif choice == 'Pot 2 Voltage':
-            run_dc_voltage_menu(1)
+        choice = pick_menu('DC REFERENCE', ['Voltage', 'Output', 'Back'])
+        if choice == 'Voltage':
+            run_dc_voltage_menu()
         elif choice == 'Output':
             go_main = run_dc_output_menu()
             if go_main:
