@@ -108,6 +108,9 @@ try:
 
         # Spin until the button callback clears isMainPage
         while state['isMainPage']:
+            print("I AM GAY")
+            print(pi.read(22), pi.read(27))
+            time.sleep(0.2)
             time.sleep(0.05)
 
         # page 2
