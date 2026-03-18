@@ -25,7 +25,6 @@ Calibration endpoints:
   W1 = round(127 * t)          # positive circuit increases as amplitude rises
 """
 
-import pigpio
 import time
 
 # ── Hardware constants ────────────────────────────────────────────────────────
@@ -65,7 +64,7 @@ class SquareWaveGenerator:
         self._amplitude = 0.0
         self._running   = False
 
-        self._pi.set_mode(PWM_GPIO, pigpio.OUTPUT)
+        # hardware_PWM sets GPIO 13 to ALT0 automatically — no set_mode needed
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
