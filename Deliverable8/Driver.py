@@ -39,7 +39,7 @@ from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
 
 # ── GPIO pin assignments ──────────────────────────────────────────────────────
-PIN_A          = 22
+PIN_A          = 22 
 PIN_B          = 27
 ROTARY_BTN_PIN = 17
 
@@ -50,9 +50,9 @@ HOLD_US     = 2_000_000   # 2 s     – hold to go back
 AMP_STEP = 0.1            # V per encoder click
 
 # ── DC Reference constants ────────────────────────────────────────────────────
-MIN_DC_VOLT  = 0.0
-MAX_DC_VOLT  = 10.0
-DC_VOLT_STEP = 0.625
+MIN_DC_VOLT  = -5.0
+MAX_DC_VOLT  =  5.0
+DC_VOLT_STEP =  0.625
 DC_SPI_CHANNEL = 0
 DC_SPI_SPEED   = 50_000
 DC_SPI_FLAGS   = 0
@@ -366,14 +366,14 @@ def run_dc_voltage_menu():
         )
         if choice == 'Adjust':
             new_val = adjust_value(
-                'DC VOLTAGE (0-10V)',
+                'DC VOLTAGE (-5 to 5V)',
                 state['dc_voltage'],
                 MIN_DC_VOLT, MAX_DC_VOLT, DC_VOLT_STEP,
                 lambda v: f"{v:.3f} V",
             )
             if new_val is not None:
                 state['dc_voltage'] = round(new_val, 3)
-                dc_ref.set_total_voltage(state['dc_voltage'])
+                dc_ref.set_voltage(state['dc_voltage'])
         elif choice == 'Back':
             return
 
@@ -387,24 +387,24 @@ def run_dc_output_menu():
         status = 'ON' if state['dc_output_on'] else 'OFF'
         choice = pick_menu(f"DC OUTPUT: {status}", ['On', 'Off', 'Back', 'Main'])
         if choice == 'On':
-            dc_ref.set_total_voltage(state['dc_voltage'])
-            dc_ref.start_all()
+            dc_ref.set_voltage(state['dc_voltage'])
+            dc_ref.start()
             state['dc_output_on'] = True
             run_dc_live_display()
             # returning from live display (hold) turns output off
-            dc_ref.stop_all()
+            dc_ref.stop()
             state['dc_output_on'] = False
         elif choice == 'Off':
-            dc_ref.stop_all()
+            dc_ref.stop()
             state['dc_output_on'] = False
         elif choice == 'Back':
             if state['dc_output_on']:
-                dc_ref.stop_all()
+                dc_ref.stop()
                 state['dc_output_on'] = False
             return False
         elif choice == 'Main':
             if state['dc_output_on']:
-                dc_ref.stop_all()
+                dc_ref.stop()
                 state['dc_output_on'] = False
             return True
 
@@ -421,7 +421,7 @@ def run_dc_reference_menu():
                 return True
         elif choice == 'Back':
             if state['dc_output_on']:
-                dc_ref.stop_all()
+                dc_ref.stop()
                 state['dc_output_on'] = False
             return False
 
@@ -446,7 +446,7 @@ def run_main_menu():
             if state['output_on']:
                 gen.stop()
             if state['dc_output_on']:
-                dc_ref.stop_all()
+                dc_ref.stop()
             lcd.put_line(0, 'Goodbye!')
             lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
             return
@@ -463,7 +463,7 @@ finally:
     if state['output_on']:
         gen.stop()
     if state['dc_output_on']:
-        dc_ref.stop_all()
+        dc_ref.stop()
     gen.cleanup()
     dc_ref.cleanup()
     pi.spi_close(spi_dc)
