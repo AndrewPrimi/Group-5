@@ -29,6 +29,9 @@ _lcd = None
 PIN_A = 22   # CLK
 PIN_B = 27   # DT
 
+# Potentiometer values to save while running.
+pot_1 = 0
+pot_2 = 0
 
 def setup_callbacks(state, pi, lcd):
     """Inject shared state, pigpio instance, and LCD into this module.

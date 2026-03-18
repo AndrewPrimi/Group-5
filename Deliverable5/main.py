@@ -26,7 +26,7 @@ from callbacks import (
     varconst_direction_callback, varconst_button_callback,
     pot_direction_callback, callback_set_digi,
     constant_direction_callback, constant_button_callback,
-    PIN_A, PIN_B,
+    PIN_A, PIN_B, pot_1, pot_2,
 )
 import rotary_encoder
 
@@ -82,6 +82,9 @@ pi.set_glitch_filter(rotaryEncoder_pin, 10000)
 
 # Inject hardware references into the callbacks module
 setup_callbacks(state, pi, lcd)
+
+# Flag for if powered on for the first time for saving pot_1 and pot_2 values
+isPowerOnFirstTime = False
 
 print("Starting...")
 try:
@@ -140,7 +143,15 @@ try:
             clear_callbacks(state)
 
             # Reset to default and display starting value
-            state['ohms'] = DEFAULT_OHMS
+            if (!isPowerOnFirstTime):
+                state['ohms'] = DEFAULT_OHMS
+                isPowerOnFirstTime = True
+            else:
+                if _s['selected_pot'] == 0:
+                    state['ohms'] = pot_1
+                elif _s['selected_pot'] == 1:
+                    state['ohms'] = pot_2
+                
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
             lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
@@ -160,7 +171,18 @@ try:
                     now = pi.get_current_tick()
                     if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
                         # 3 seconds elapsed while held 
-                        state['ohms'] = DEFAULT_OHMS
+                        #state['ohms'] = DEFAULT_OHMS
+
+                        # Reset to default and display starting value
+                        if (!isPowerOnFirstTime):
+                            state['ohms'] = DEFAULT_OHMS
+                            isPowerOnFirstTime = True
+                        else:
+                            if _s['selected_pot'] == 0:
+                                state['ohms'] = pot_1
+                            elif _s['selected_pot'] == 1:
+                                state['ohms'] = pot_2
+
                         state['button_press_tick'] = None
                         state['isMainPage'] = True
                 time.sleep(0.05)
