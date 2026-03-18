@@ -53,6 +53,9 @@ AMP_STEP = 0.1            # V per encoder click
 MIN_DC_VOLT  = 0.0
 MAX_DC_VOLT  = 5.0
 DC_VOLT_STEP = 0.1
+DC_SPI_CHANNEL = 0
+DC_SPI_SPEED   = 50_000
+DC_SPI_FLAGS   = 0
 
 # ── Voltmeter (SAR ADC) constants ─────────────────────────────────────────────
 COMPARATOR_PIN = 24
@@ -66,10 +69,11 @@ pi = pigpio.pi()
 if not pi.connected:
     raise SystemExit("Cannot connect to pigpio daemon.  Run 'sudo pigpiod' first.")
 
-lcd      = i2c_lcd.lcd(pi, width=20)
-gen      = SquareWaveGenerator()
-dc_ref   = DCReferenceGenerator()
-spi_vm   = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
+lcd       = i2c_lcd.lcd(pi, width=20)
+gen       = SquareWaveGenerator()
+spi_dc    = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
+dc_ref    = DCReferenceGenerator(pi, spi_dc)
+spi_vm    = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
 voltmeter = SAR_ADC(pi, spi_vm, COMPARATOR_PIN)
 
 for pin in (PIN_A, PIN_B):
@@ -86,7 +90,7 @@ state = {
     'frequency':         1000,
     'amplitude':         0.0,
     'output_on':         False,
-    'dc_voltage':        0.0,
+    'dc_voltages':       [0.0, 0.0],   # independent voltage per pot
     'dc_output_on':      False,
     'active_callbacks':  [],
     'button_last_tick':  None,
@@ -331,9 +335,11 @@ def run_dc_live_display():
 
     def _redraw():
         measured, _ = voltmeter.read_voltage(VREF)
-        lcd.put_line(0, f"DC REF ON  Set:{state['dc_voltage']:.1f}V")
-        lcd.put_line(1, f"Measured: {measured:.2f} V")
-        lcd.put_line(2, '')
+        v0 = state['dc_voltages'][0]
+        v1 = state['dc_voltages'][1]
+        lcd.put_line(0, f"DC REF ON")
+        lcd.put_line(1, f"P1:{v0:.1f}V  P2:{v1:.1f}V")
+        lcd.put_line(2, f"Measured: {measured:.2f} V")
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
@@ -354,23 +360,26 @@ def run_dc_live_display():
         time.sleep(0.02)
 
 
-def run_dc_voltage_menu():
+def run_dc_voltage_menu(pot):
+    """Adjust the voltage for one pot channel independently."""
+    label = f"POT {pot + 1} VOLT"
     while True:
+        current = state['dc_voltages'][pot]
         choice = pick_menu(
-            f"DC VOLT: {state['dc_voltage']:.1f}V",
+            f"P{pot + 1} VOLT: {current:.1f}V",
             ['Adjust', 'Back'],
         )
         if choice == 'Adjust':
             new_val = adjust_value(
-                'DC VOLTAGE',
-                state['dc_voltage'],
+                label,
+                state['dc_voltages'][pot],
                 MIN_DC_VOLT, MAX_DC_VOLT, DC_VOLT_STEP,
                 lambda v: f"{v:.1f} V",
             )
             if new_val is not None:
-                state['dc_voltage'] = round(new_val, 1)
-                if state['dc_output_on']:
-                    dc_ref.set_voltage(state['dc_voltage'])
+                state['dc_voltages'][pot] = round(new_val, 1)
+                # only this pot's wiper is written; the other is untouched
+                dc_ref.set_voltage(state['dc_voltages'][pot], pot)
         elif choice == 'Back':
             return
 
@@ -384,24 +393,25 @@ def run_dc_output_menu():
         status = 'ON' if state['dc_output_on'] else 'OFF'
         choice = pick_menu(f"DC OUTPUT: {status}", ['On', 'Off', 'Back', 'Main'])
         if choice == 'On':
-            dc_ref.set_voltage(state['dc_voltage'])
-            dc_ref.start()
+            for pot in (0, 1):
+                dc_ref.set_voltage(state['dc_voltages'][pot], pot)
+            dc_ref.start_all()
             state['dc_output_on'] = True
             run_dc_live_display()
             # returning from live display (hold) turns output off
-            dc_ref.stop()
+            dc_ref.stop_all()
             state['dc_output_on'] = False
         elif choice == 'Off':
-            dc_ref.stop()
+            dc_ref.stop_all()
             state['dc_output_on'] = False
         elif choice == 'Back':
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop_all()
                 state['dc_output_on'] = False
             return False
         elif choice == 'Main':
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop_all()
                 state['dc_output_on'] = False
             return True
 
@@ -409,16 +419,18 @@ def run_dc_output_menu():
 def run_dc_reference_menu():
     """Returns True if the user navigated directly to Main."""
     while True:
-        choice = pick_menu('DC REFERENCE', ['Voltage', 'Output', 'Back'])
-        if choice == 'Voltage':
-            run_dc_voltage_menu()
+        choice = pick_menu('DC REFERENCE', ['Pot 1 Voltage', 'Pot 2 Voltage', 'Output', 'Back'])
+        if choice == 'Pot 1 Voltage':
+            run_dc_voltage_menu(0)
+        elif choice == 'Pot 2 Voltage':
+            run_dc_voltage_menu(1)
         elif choice == 'Output':
             go_main = run_dc_output_menu()
             if go_main:
                 return True
         elif choice == 'Back':
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop_all()
                 state['dc_output_on'] = False
             return False
 
@@ -443,7 +455,7 @@ def run_main_menu():
             if state['output_on']:
                 gen.stop()
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop_all()
             lcd.put_line(0, 'Goodbye!')
             lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
             return
@@ -460,9 +472,10 @@ finally:
     if state['output_on']:
         gen.stop()
     if state['dc_output_on']:
-        dc_ref.stop()
+        dc_ref.stop_all()
     gen.cleanup()
     dc_ref.cleanup()
+    pi.spi_close(spi_dc)
     pi.spi_close(spi_vm)
     clear_callbacks()
     lcd.close()
