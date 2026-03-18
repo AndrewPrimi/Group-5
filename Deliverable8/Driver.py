@@ -31,7 +31,7 @@ import time
 
 import i2c_lcd
 import rotary_encoder
-from sqaure_wave import (
+from square_wave import (
     SquareWaveGenerator,
     MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP,
 )
