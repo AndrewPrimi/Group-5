@@ -84,7 +84,7 @@ pi.set_glitch_filter(rotaryEncoder_pin, 10000)
 setup_callbacks(state, pi, lcd)
 
 # Flag for if powered on for the first time for saving pot_1 and pot_2 values
-isPowerOnFirstTime = False
+isPowerOnFirstTime = True
 
 print("Starting...")
 try:
@@ -111,8 +111,6 @@ try:
 
         # Spin until the button callback clears isMainPage
         while state['isMainPage']:
-            print("I AM GAY")
-            print(pi.read(22), pi.read(27))
             time.sleep(0.2)
             time.sleep(0.05)
 
@@ -143,14 +141,11 @@ try:
             clear_callbacks(state)
 
             # Reset to default and display starting value
-            if (isPowerOnFirstTime == False):
+            if (isPowerOnFirstTime == True):
                 state['ohms'] = DEFAULT_OHMS
-                isPowerOnFirstTime = True
+                isPowerOnFirstTime = False
             else:
-                if state['selected_pot'] == 0:
-                    state['ohms'] = pot_1
-                elif state['selected_pot'] == 1:
-                    state['ohms'] = pot_2
+                state['ohms'] = state['pot_values'][state['selected_pot']]
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
@@ -174,14 +169,11 @@ try:
                         #state['ohms'] = DEFAULT_OHMS
 
                         # Reset to default and display starting value
-                        if (isPowerOnFirstTime == False):
+                        if (isPowerOnFirstTime):
                             state['ohms'] = DEFAULT_OHMS
-                            isPowerOnFirstTime = True
+                            isPowerOnFirstTime = False
                         else:
-                            if state['selected_pot'] == 0:
-                                state['ohms'] = pot_1
-                            elif state['selected_pot'] == 1:
-                                state['ohms'] = pot_2
+                            state['ohms'] = state['pot_values'][state['selected_pot']]
 
                         state['button_press_tick'] = None
                         state['isMainPage'] = True
