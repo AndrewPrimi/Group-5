@@ -145,10 +145,7 @@ try:
                 state['ohms'] = DEFAULT_OHMS
                 isPowerOnFirstTime = False
             else:
-                if state['selected_pot'] == 0:
-                    state['ohms'] = pot_1
-                elif state['selected_pot'] == 1:
-                    state['ohms'] = pot_2
+                state['ohms'] = state['pot_values'][state['selected_pot']]
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
@@ -176,10 +173,7 @@ try:
                             state['ohms'] = DEFAULT_OHMS
                             isPowerOnFirstTime = False
                         else:
-                            if state['selected_pot'] == 0:
-                                state['ohms'] = pot_1
-                            elif state['selected_pot'] == 1:
-                                state['ohms'] = pot_2
+                            state['ohms'] = state['pot_values'][state['selected_pot']]
 
                         state['button_press_tick'] = None
                         state['isMainPage'] = True
