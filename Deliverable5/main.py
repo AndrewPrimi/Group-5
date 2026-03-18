@@ -174,7 +174,7 @@ try:
                         #state['ohms'] = DEFAULT_OHMS
 
                         # Reset to default and display starting value
-                        if (!isPowerOnFirstTime):
+                        if (isPowerOnFirstTime == False):
                             state['ohms'] = DEFAULT_OHMS
                             isPowerOnFirstTime = True
                         else:
