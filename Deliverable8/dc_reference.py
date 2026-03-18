@@ -1,39 +1,37 @@
 """
-dc_reference.py – Bipolar DC voltage reference via MCP4231 digital pot.
+dc_reference.py – Bipolar DC voltage reference via MCP4231 dual digital pot.
 
-The MCP4231 Pot 0 wiper is used as a voltage divider:
-  PA0  →  +5 V rail
-  PB0  →  -5 V rail
-  PW0  →  output (-5 V to +5 V)
+Both wipers (W0 and W1) must move together to produce the correct output.
+Calibration endpoints supplied by hardware team:
 
-The wiper position (0–128) maps linearly across the -5 V to +5 V span:
-  step =  0  →  PB0 = -5.0 V
-  step = 64  →  midpoint =  0.0 V
-  step = 128 →  PA0 = +5.0 V
+  Voltage  |  W0 step  |  W1 step
+  ---------+-----------+---------
+   +5.0 V  |    127    |    49
+   -5.0 V  |     64    |   127
 
-Pot 1 of the MCP4231 is not used for the voltage reference.
+Linear interpolation gives:
+  t  = (voltage + 5.0) / 10.0        # 0.0 at -5 V, 1.0 at +5 V
+  W0 = round(64  + 63 * t)
+  W1 = round(127 - 78 * t)
 
 SPI command bytes (MCP4231):
-  Pot 0 write: 0x00  <step>
+  W0 write: 0x00  <step>
+  W1 write: 0x10  <step>
 """
 
 import time
 
-MAX_STEPS = 128     # MCP4231 is 7-bit (0–128 positions)
-MAX_VOLT  =  5.0    # +5 V upper rail
-MIN_VOLT  = -5.0    # -5 V lower rail
+MAX_VOLT =  5.0
+MIN_VOLT = -5.0
 
 
-def _volt_to_step(voltage):
-    """
-    Map -5 V..+5 V linearly onto wiper steps 0..128.
-
-    Formula:  step = (voltage - MIN_VOLT) / (MAX_VOLT - MIN_VOLT) * MAX_STEPS
-              step = (voltage + 5.0)      / 10.0                  * 128
-    """
-    fraction = (voltage - MIN_VOLT) / (MAX_VOLT - MIN_VOLT)
-    fraction = max(0.0, min(1.0, fraction))
-    return int(fraction * MAX_STEPS)
+def _volt_to_steps(voltage):
+    """Return (w0_step, w1_step) for a voltage in [-5.0, +5.0] V."""
+    voltage = max(MIN_VOLT, min(MAX_VOLT, voltage))
+    t  = (voltage + 5.0) / 10.0
+    w0 = round(64  + 63 * t)
+    w1 = round(127 - 78 * t)
+    return w0, w1
 
 
 class DCReferenceGenerator:
@@ -51,9 +49,12 @@ class DCReferenceGenerator:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _write_pot(self, step):
-        step = max(0, min(MAX_STEPS, step))
-        self._pi.spi_write(self._spi, [0x00, step])
+    def _write_wipers(self, voltage):
+        """Write both W0 and W1 for the given voltage."""
+        w0, w1 = _volt_to_steps(voltage)
+        self._pi.spi_write(self._spi, [0x00, w0])
+        time.sleep(self._settle)
+        self._pi.spi_write(self._spi, [0x10, w1])
         time.sleep(self._settle)
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -62,17 +63,17 @@ class DCReferenceGenerator:
         """Set target voltage (-5.0 to +5.0 V) and apply immediately if running."""
         self._voltage = max(MIN_VOLT, min(MAX_VOLT, voltage))
         if self._running:
-            self._write_pot(_volt_to_step(self._voltage))
+            self._write_wipers(self._voltage)
 
     def start(self):
         """Enable output at the stored voltage."""
         self._running = True
-        self._write_pot(_volt_to_step(self._voltage))
+        self._write_wipers(self._voltage)
 
     def stop(self):
-        """Move wiper to midpoint (0 V) and disable output."""
+        """Move both wipers to the 0 V position and disable output."""
         self._running = False
-        self._write_pot(_volt_to_step(0.0))
+        self._write_wipers(0.0)
 
     def cleanup(self):
         self.stop()
