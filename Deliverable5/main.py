@@ -62,6 +62,7 @@ state = {
     'button_last_tick': None,        # tick of last accepted press (debounce)
     'spi_handle': spi_handle,        # pigpio SPI handle for MCP4231
     'active_callbacks': [],          # list of pigpio callbacks to cancel on page change
+    
 }
 
 
@@ -146,7 +147,7 @@ try:
                 state['ohms'] = DEFAULT_OHMS
                 isPowerOnFirstTime = False
             else:
-                state['ohms'] = state['pot_values'][state['selected_pot']]
+                state['ohms'] = [state['selected_pot']]
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
@@ -172,7 +173,7 @@ try:
 
                         # Reset to default and display starting value
                         if (isPowerOnFirstTime == False):
-                            state['ohms'] = state['pot_values'][state['selected_pot']]
+                            state['ohms'] = [state['selected_pot']]
                         else:
                             state['ohms'] = DEFAULT_OHMS
                             isPowerOnFirstTime = False

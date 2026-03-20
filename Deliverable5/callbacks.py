@@ -238,7 +238,7 @@ def _set_digipot_step(step_value):
         _pi.spi_write(_s['spi_handle'], [cmd, step_value])
         approx_ohms = step_to_ohms(step_value)
 
-        _s['pot_values'][_s['selected_pot']] = approx_ohms # save digipot value here
+        _s['selected_pot'] = approx_ohms # save digipot value here
         
         print(
             f"Pot {_s['selected_pot'] + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
