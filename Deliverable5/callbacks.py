@@ -73,6 +73,7 @@ def menu_button_callback(gpio, level, tick):
                 return
         _s['button_last_tick'] = tick
         _s['selected_pot'] = _s['menu_selection']   # 0 or 1
+        print("_s['selected_pot'] is ", _s['selected_pot'])
         _s['isMainPage'] = False                    # break out of main-page loop
 
 
@@ -146,7 +147,7 @@ def constant_button_callback(gpio, level, tick):
         print(f'Constant value set: {label} Ohms')
 
     elif level == 1 and _s['button_press_tick'] is not None:
-        # Button released – check for long hold (>= 3 s)
+        # Button released – check for long hold (>= 2 s)
         hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
         _s['button_press_tick'] = None
         if hold_time >= 2_000_000:
