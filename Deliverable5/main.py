@@ -140,6 +140,8 @@ try:
             state['button_last_tick'] = None
             clear_callbacks(state)
 
+            print("selected_pot: ", selected_pot)
+            
             # Reset to default and display starting value
             if (isPowerOnFirstTime == True):
                 state['ohms'] = DEFAULT_OHMS
