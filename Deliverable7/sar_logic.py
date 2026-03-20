@@ -40,7 +40,8 @@ class SAR_ADC:
 
     def _write_step(self, step):
         step = max(0, min(MAX_STEPS - 1, step))
-        cmd = 0x00 if self.selected_pot == 0 else 0x10
+        #cmd = 0x00 if self.selected_pot == 0 else 0x10
+        cmd = 0x00
         self.pi.spi_write(self.spi_handle, [cmd, step])
         time.sleep(self.settle_time)
 
