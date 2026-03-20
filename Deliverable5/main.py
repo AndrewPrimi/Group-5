@@ -149,7 +149,7 @@ try:
             #else:
             #    state['ohms'] = state['pot_values'][state['selected_pot']]
             # Save the new ohm value of the selected pot
-            state['ohms'] = state['pot_values'][int(state['selected_pot'])]
+            state['ohms'] = state['pot_values'][state['selected_pot']]
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
@@ -167,7 +167,7 @@ try:
             # Stay until a long hold sets isMainPage = True
             while not state['isMainPage']:
                 #print("while not state ismainpage selected_pot: ", state['selected_pot'])
-                if state['button_press_tick'] is not None:
+                '''if state['button_press_tick'] is not None:
                     now = pi.get_current_tick()
                     if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
                         # 3 seconds elapsed while held 
@@ -180,10 +180,10 @@ try:
                         #    state['ohms'] = DEFAULT_OHMS
                         #    isPowerOnFirstTime = False
                         # Save the new ohm value of the selected pot
-                        state['ohms'] = state['pot_values'][int(state['selected_pot'])]
+                        state['ohms'] = state['pot_values'][state['selected_pot']]
                             
                         state['button_press_tick'] = None
-                        state['isMainPage'] = True
+                        state['isMainPage'] = True'''
                 time.sleep(0.05)
 
         else:

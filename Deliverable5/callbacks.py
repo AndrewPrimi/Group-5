@@ -73,7 +73,6 @@ def menu_button_callback(gpio, level, tick):
                 return
         _s['button_last_tick'] = tick
         _s['selected_pot'] = _s['menu_selection']   # 0 or 1
-        print("_s['selected_pot'] is ", _s['selected_pot'])
         _s['isMainPage'] = False                    # break out of main-page loop
 
 
@@ -140,6 +139,8 @@ def constant_button_callback(gpio, level, tick):
         step = ohms_to_step(ohms_value)
         _set_digipot_step(step)
 
+        _s['pot_values'][_s['selected_pot']] = ohms_value # save value to selected pot
+        
         # Show confirmation on LCD
         label = CONSTANT_LABELS[_s['constant_selection']]
         _lcd.put_line(2, 'Value set!')
@@ -239,8 +240,6 @@ def _set_digipot_step(step_value):
         cmd = 0x00 if _s['selected_pot'] == 0 else 0x10 # choosing which digi pot to use
         _pi.spi_write(_s['spi_handle'], [cmd, step_value])
         approx_ohms = step_to_ohms(step_value)
-
-        _s['selected_pot'] = approx_ohms # save digipot value here
         
         print(
             f"Pot {_s['selected_pot'] + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
