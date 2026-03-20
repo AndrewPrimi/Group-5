@@ -149,9 +149,9 @@ def constant_button_callback(gpio, level, tick):
         # Button released – check for long hold (>= 3 s)
         hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
         _s['button_press_tick'] = None
-        if hold_time >= 3_000_000:
+        if hold_time >= 2_000_000:
             # Long hold: reset digipot and navigate back to main page
-            _set_digipot_step(ohms_to_step(DEFAULT_OHMS))
+            #_set_digipot_step(ohms_to_step(DEFAULT_OHMS))
             _s['isMainPage'] = True
 
 
@@ -173,6 +173,7 @@ def callback_set_digi(gpio, level, tick):
         _s['button_press_tick'] = tick   # start timing for long-press
         step = ohms_to_step(_s['ohms'])
         _set_digipot_step(step)
+        _s['pot_values'][_s['selected_pot']] = _s['ohms'] # save to selected pot
         _lcd.put_line(2, 'Value set!')
         _lcd.put_line(3, f'Pot {_s["selected_pot"] + 1} updated')
         print('Button pressed! Value sent to digi pot.')
@@ -182,8 +183,8 @@ def callback_set_digi(gpio, level, tick):
         hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
         _s['button_press_tick'] = None
         if hold_time >= 2_000_000:  # 2 seconds
-            _s['ohms'] = DEFAULT_OHMS
-            _set_digipot_step(ohms_to_step(DEFAULT_OHMS))
+            #_s['ohms'] = DEFAULT_OHMS
+            #_set_digipot_step(ohms_to_step(DEFAULT_OHMS))
             _s['isMainPage'] = True
 
 

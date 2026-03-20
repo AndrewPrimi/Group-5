@@ -169,7 +169,7 @@ try:
                 #print("while not state ismainpage selected_pot: ", state['selected_pot'])
                 if state['button_press_tick'] is not None:
                     now = pi.get_current_tick()
-                    if pigpio.tickDiff(state['button_press_tick'], now) >= 3_000_000:
+                    if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
                         # 3 seconds elapsed while held 
                         #state['ohms'] = DEFAULT_OHMS
 
