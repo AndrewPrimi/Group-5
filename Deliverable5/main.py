@@ -171,11 +171,11 @@ try:
                         #state['ohms'] = DEFAULT_OHMS
 
                         # Reset to default and display starting value
-                        if (isPowerOnFirstTime):
+                        if (isPowerOnFirstTime == False):
+                            state['ohms'] = state['pot_values'][state['selected_pot']]
+                        else:
                             state['ohms'] = DEFAULT_OHMS
                             isPowerOnFirstTime = False
-                        else:
-                            state['ohms'] = state['pot_values'][state['selected_pot']]
 
                         state['button_press_tick'] = None
                         state['isMainPage'] = True
