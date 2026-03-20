@@ -138,9 +138,10 @@ def constant_button_callback(gpio, level, tick):
         ohms_value = CONSTANT_OHMS[_s['constant_selection']]
         step = ohms_to_step(ohms_value)
         _set_digipot_step(step)
-
-        _s['pot_values'][_s['selected_pot']] = ohms_value # save value to selected pot
         
+        _s['pot_values'][_s['selected_pot']] = ohms_value
+        _s['ohms'] = ohms_value   # save value to selected pot 
+                
         # Show confirmation on LCD
         label = CONSTANT_LABELS[_s['constant_selection']]
         _lcd.put_line(2, 'Value set!')

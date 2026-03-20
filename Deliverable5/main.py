@@ -112,7 +112,6 @@ try:
 
         # Spin until the button callback clears isMainPage
         while state['isMainPage']:
-            time.sleep(0.2)
             time.sleep(0.05)
 
         # page 2
