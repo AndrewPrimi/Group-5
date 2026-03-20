@@ -50,19 +50,19 @@ print(f"SPI handle: {spi_handle}")
 # Shared state dictionary
 # Passed to callbacks.py so interrupt handlers can read/write program state.
 state = {
-    'ohms': DEFAULT_OHMS,            # current target resistance (variable mode)
-    'selected_pot': 0,               # 0 = Pot 1, 1 = Pot 2
-    'menu_selection': 0,             # highlighted item on the main page
-    'isMainPage': True,              # flag: currently on main page?
-    'isVarConstPage': False,         # flag: currently on var/const page?
-    'var_const_selection': 0,        # 0 = Variable, 1 = Constant
-    'constant_selection': 0,         # index into CONSTANT_OHMS presets
-    'last_time': None,               # timestamp of last encoder detent (speed calc)
-    'button_press_tick': None,       # tick when button was pressed (hold detection)
-    'button_last_tick': None,        # tick of last accepted press (debounce)
-    'spi_handle': spi_handle,        # pigpio SPI handle for MCP4231
-    'active_callbacks': [],          # list of pigpio callbacks to cancel on page change
-    
+    'ohms': DEFAULT_OHMS,                        # current target resistance (variable mode)
+    'selected_pot': 0,                           # 0 = Pot 1, 1 = Pot 2
+    'pot_values': [DEFAULT_OHMS, DEFAULT_OHMS],  # [Pot 1 Value, Pot 2 Value]
+    'menu_selection': 0,                         # highlighted item on the main page
+    'isMainPage': True,                          # flag: currently on main page?
+    'isVarConstPage': False,                     # flag: currently on var/const page?
+    'var_const_selection': 0,                    # 0 = Variable, 1 = Constant
+    'constant_selection': 0,                     # index into CONSTANT_OHMS presets
+    'last_time': None,                           # timestamp of last encoder detent (speed calc)
+    'button_press_tick': None,                   # tick when button was pressed (hold detection)
+    'button_last_tick': None,                    # tick of last accepted press (debounce)
+    'spi_handle': spi_handle,                    # pigpio SPI handle for MCP4231
+    'active_callbacks': [],                      # list of pigpio callbacks to cancel on page change
 }
 
 
@@ -147,7 +147,7 @@ try:
                 state['ohms'] = DEFAULT_OHMS
                 isPowerOnFirstTime = False
             else:
-                state['ohms'] = [state['selected_pot']]
+                state['ohms'] = state['pot_values'][state['selected_pot']]
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
@@ -173,7 +173,7 @@ try:
 
                         # Reset to default and display starting value
                         if (isPowerOnFirstTime == False):
-                            state['ohms'] = [state['selected_pot']]
+                            state['ohms'] = state['pot_values'][state['selected_pot']]
                         else:
                             state['ohms'] = DEFAULT_OHMS
                             isPowerOnFirstTime = False
