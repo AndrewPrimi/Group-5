@@ -104,10 +104,10 @@ try:
 
         # Register encoder rotation + button press callbacks
         decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
-        print("decoder", decoder)
+        #print("decoder", decoder)
         cb_btn = pi.callback(
             rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
-        print("cb_btn", cb_btn)
+        #print("cb_btn", cb_btn)
         state['active_callbacks'] = [decoder, cb_btn]
 
         # Spin until the button callback clears isMainPage
@@ -135,7 +135,7 @@ try:
             time.sleep(0.05)
 
         if state['var_const_selection'] == 0:
-            print("var_const_selection selected_pot: ", state['selected_pot'])
+            #print("var_const_selection selected_pot: ", state['selected_pot'])
             #page 3a
             state['isMainPage'] = False
             state['last_time'] = None
@@ -164,7 +164,7 @@ try:
 
             # Stay until a long hold sets isMainPage = True
             while not state['isMainPage']:
-                print("while not state ismainpage selected_pot: ", state['selected_pot'])
+                #print("while not state ismainpage selected_pot: ", state['selected_pot'])
                 if state['button_press_tick'] is not None:
                     now = pi.get_current_tick()
                     if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
