@@ -143,11 +143,13 @@ try:
             clear_callbacks(state)
             
             # Reset to default and display starting value
-            if (isPowerOnFirstTime == True):
-                state['ohms'] = DEFAULT_OHMS
-                isPowerOnFirstTime = False
-            else:
-                state['ohms'] = state['pot_values'][state['selected_pot']]
+            #if (isPowerOnFirstTime == True):
+            #    state['ohms'] = DEFAULT_OHMS
+            #    isPowerOnFirstTime = False
+            #else:
+            #    state['ohms'] = state['pot_values'][state['selected_pot']]
+            # Save the new ohm value of the selected pot
+            state['ohms'] = state['pot_values'][state['selected_pot']]
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
@@ -167,17 +169,19 @@ try:
                 #print("while not state ismainpage selected_pot: ", state['selected_pot'])
                 if state['button_press_tick'] is not None:
                     now = pi.get_current_tick()
-                    if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
+                    if pigpio.tickDiff(state['button_press_tick'], now) >= 3_000_000:
                         # 3 seconds elapsed while held 
                         #state['ohms'] = DEFAULT_OHMS
 
                         # Reset to default and display starting value
-                        if (isPowerOnFirstTime == False):
-                            state['ohms'] = state['pot_values'][state['selected_pot']]
-                        else:
-                            state['ohms'] = DEFAULT_OHMS
-                            isPowerOnFirstTime = False
-
+                        #if (isPowerOnFirstTime == False):
+                        #    state['ohms'] = state['pot_values'][state['selected_pot']]
+                        #else:
+                        #    state['ohms'] = DEFAULT_OHMS
+                        #    isPowerOnFirstTime = False
+                        # Save the new ohm value of the selected pot
+                        state['ohms'] = state['pot_values'][state['selected_pot']]
+                            
                         state['button_press_tick'] = None
                         state['isMainPage'] = True
                 time.sleep(0.05)
