@@ -139,8 +139,6 @@ try:
             state['last_time'] = None
             state['button_last_tick'] = None
             clear_callbacks(state)
-
-            print("selected_pot: ", selected_pot)
             
             # Reset to default and display starting value
             if (isPowerOnFirstTime == True):
@@ -164,6 +162,7 @@ try:
 
             # Stay until a long hold sets isMainPage = True
             while not state['isMainPage']:
+                print("selected_pot: ", selected_pot)
                 if state['button_press_tick'] is not None:
                     now = pi.get_current_tick()
                     if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
