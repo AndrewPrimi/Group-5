@@ -186,29 +186,6 @@ class lcd:
         self._inst(0x0C) # Display on,move_to off, blink off 
         self._inst(0x28) # 4-bits, 1 line, 5x8 font 
         self._inst(0x01) # Clear display
-
-    '''def _byte(self, MSb, LSb):
-        """
-        Send upper and lower nibble.
-        """
-        if self.backlight_on:
-            MSb |= self.BL
-            LSb |= self.BL
-
-        data = [
-            MSb | self.E, MSb & ~self.E,
-            LSb | self.E, LSb & ~self.E
-        ]
-
-        for _ in range(3):
-            try:
-                self.pi.i2c_write_device(self._h, data)
-                time.sleep(0.001)
-                return
-            except pigpio.error:
-                time.sleep(0.01)
-
-        raise RuntimeError(f"LCD I2C write failed at {hex(self.addr)} with data {data}")'''
         
     def _byte(self, MSb, LSb):
         if self.backlight_on:
@@ -220,6 +197,15 @@ class lcd:
 
         # Send low nibble
         self._pulse(LSb)
+
+    def _pulse(self, data):
+        # Enable HIGH
+        self.pi.i2c_write_device(self._h, [data | self.E])
+        time.sleep(0.0005)
+    
+        # Enable LOW
+        self.pi.i2c_write_device(self._h, [data & ~self.E])
+        time.sleep(0.0001)
     
     def _inst(self, bits):
         """
