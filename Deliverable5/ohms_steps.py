@@ -34,9 +34,9 @@ def ohms_to_step(ohms):
     """
     #ohms = 0.9204 * ohms + 89
     #ohms = 1.0865 * ohms
-    #ohms = max(0, min(ohms, MAXIMUM_OHMS))
     
-    step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
+    ohms = max(0, min(ohms, MAXIMUM_OHMS))
+    step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS) 
     return step
 
 
@@ -45,7 +45,6 @@ def step_to_ohms(step):
 
     This is the inverse of ohms_to_step (with minor rounding differences).
     """
-
     raw_ohms = (step / MAX_STEPS) * MAXIMUM_OHMS 
     
     #corrected_ohms = raw_ohms - 96.692
