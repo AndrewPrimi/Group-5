@@ -161,7 +161,7 @@ class lcd:
         """
         Initialize LCD in 4-bit mode with conservative delays.
         """
-        '''time.sleep(0.05)
+        """time.sleep(0.05)
 
         self._inst(0x33) # Initialise 1
         #time.sleep(0.005)
@@ -186,7 +186,7 @@ class lcd:
         self._inst(0x06) # Cursor increment 
         self._inst(0x0C) # Display on,move_to off, blink off 
         self._inst(0x28) # 4-bits, 1 line, 5x8 font 
-        self._inst(0x01) # Clear display'''
+        self._inst(0x01) # Clear display"""
 
     def _init(self):
         time.sleep(0.05)
