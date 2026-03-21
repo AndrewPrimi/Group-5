@@ -146,6 +146,23 @@ def adjust_value(title, value, min_val, max_val, step, fmt):
             time.sleep(0.6)
 
 
+# ── E12 tolerance helper ─────────────────────────────────────────────────────
+
+_E12 = [
+    100, 120, 150, 180, 220, 270, 330, 390, 470, 560, 680, 820,
+    1000, 1200, 1500, 1800, 2200, 2700, 3300, 3900, 4700, 5600, 6800, 8200,
+    10000,
+]
+
+def _tolerance_str(ohms):
+    """Return a string showing nearest E12 value and delta, e.g. '4.7k  Δ-50Ω -1.1%'"""
+    nearest = min(_E12, key=lambda x: abs(x - ohms))
+    delta   = ohms - nearest
+    pct     = (delta / nearest) * 100
+    ref_str = f'{nearest / 1000:.1f}k' if nearest >= 1000 else f'{nearest}'
+    return f'Ref:{ref_str} {delta:+.0f}O {pct:+.1f}%'
+
+
 # ── Autoranging ohmmeter ─────────────────────────────────────────────────────
 
 def _autorange_read_ohms(voltmeter):
@@ -174,9 +191,8 @@ def _autorange_read_ohms(voltmeter):
 
 def run_live_display(state):
     """Square-wave live readout.  Press Enter to return."""
-    _clear()
-    print('  Press Enter to stop.\n')
     while True:
+        _clear()
         period_ms = 1000.0 / state['frequency']
         pk_pk     = 2 * state['amplitude']
         _render([
@@ -185,6 +201,7 @@ def run_live_display(state):
             f"T:{period_ms:.2f}ms  DC:50%",
             'Enter: back',
         ])
+        print('  Press Enter to stop.')
         if _enter_pressed():
             break
         time.sleep(0.25)
@@ -192,9 +209,8 @@ def run_live_display(state):
 
 def run_dc_live_display(state, voltmeter):
     """DC reference live readout with voltmeter.  Press Enter to return."""
-    _clear()
-    print('  Press Enter to stop.\n')
     while True:
+        _clear()
         measured, _ = voltmeter.read_voltage(VREF)
         _render([
             'DC REF ON',
@@ -202,6 +218,7 @@ def run_dc_live_display(state, voltmeter):
             f"Meas: {measured:.3f} V",
             'Enter: back',
         ])
+        print('  Press Enter to stop.')
         if _enter_pressed():
             break
         time.sleep(0.25)
@@ -209,22 +226,25 @@ def run_dc_live_display(state, voltmeter):
 
 def run_ohm_live_display(voltmeter):
     """Ohmmeter live readout.  Press Enter to return."""
-    _clear()
-    print('  Press Enter to stop.\n')
     while True:
+        _clear()
         ohms = _autorange_read_ohms(voltmeter)
         if ohms is None:
-            ohm_str = 'OL  (open circuit)'
+            ohm_str  = 'OL  (open circuit)'
+            tol_str  = ''
         elif ohms >= 1_000:
-            ohm_str = f'{ohms / 1000:.2f} kOhm'
+            ohm_str  = f'{ohms / 1000:.3f} kOhm'
+            tol_str  = _tolerance_str(ohms)
         else:
-            ohm_str = f'{ohms:.1f} Ohm'
+            ohm_str  = f'{ohms:.1f} Ohm'
+            tol_str  = _tolerance_str(ohms)
         _render([
             'OHMMETER',
             ohm_str,
-            f'Vref={VREF}V  autorange',
+            tol_str,
             'Enter: back',
         ])
+        print('  Press Enter to stop.')
         if _enter_pressed():
             break
         time.sleep(0.25)
