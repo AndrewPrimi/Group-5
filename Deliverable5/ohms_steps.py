@@ -22,7 +22,7 @@ CONSTANT_OHMS = [100, 1000, 5000, 10000]
 CONSTANT_LABELS = ['100', '1k', '5k', '10k']
 
 # ── SPI bus configuration for the MCP4231 ────────────────
-SPI_CHANNEL = 0       # CE0 chip-select line
+SPI_CHANNEL = 1       # CE1 chip-select line
 SPI_SPEED = 50000     # 50 kHz clock (well within MCP4231's 10 MHz max)
 SPI_FLAGS = 0         # default SPI mode 0,0
 
