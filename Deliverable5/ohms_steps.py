@@ -52,4 +52,5 @@ def step_to_ohms(step):
     
     #corrected_ohms = 1.5 * raw_ohms - 150
 
-    return corrected_ohms
+    return raw_ohms
+    #return corrected_ohms
