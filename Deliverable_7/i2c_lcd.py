@@ -353,13 +353,15 @@ if __name__ == "__main__":
         # Leave addr=None so it auto-tries common LCD addresses.
         # If you want to force one, use addr=0x27 or addr=0x24, etc.
         #lcd_display = lcd(pi, addr=None, width=20)
+
         lcd_display = lcd(pi, addr=0x27, width=20, RS=0,
                           #RW=1,
                           E=2, BL=3, B4=4, debug=True)
 
-        lcd_display.backlight(True)
+        #lcd_display.backlight(True)
         lcd_display.clear()
-
+        time.sleep(2)
+        """
         lcd_display.put_line(0, "LCD Test")
         lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
         lcd_display.put_line(2, "Hello World")
@@ -375,7 +377,7 @@ if __name__ == "__main__":
             lcd_display.put_line(3, f"Count: {count}")
             count += 1
             time.sleep(1)
-
+        """
     except KeyboardInterrupt:
         print("\nExiting on Ctrl+C")
 
