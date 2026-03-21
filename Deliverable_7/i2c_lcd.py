@@ -85,7 +85,8 @@ class lcd:
       self.B4 = B4
 
       self._h = pi.i2c_open(bus, addr)
-
+      print("LCD handle:", self._h, "addr:", hex(addr))
+      
       self._init()
 
    def backlight(self, on):
@@ -100,7 +101,7 @@ class lcd:
       self._inst(0x32) # Initialise 2
       self._inst(0x06) # Cursor increment
       self._inst(0x0C) # Display on,move_to off, blink off 
-      self._inst(0x28) # 4-bits, 1 line, 5x8 font
+      self._inst(0x28) # 4-bits, 2 line, 5x8 font
       self._inst(0x01) # Clear display
 
    def _byte(self, MSb, LSb):
@@ -109,8 +110,13 @@ class lcd:
          MSb |= self.BL
          LSb |= self.BL
 
-      self.pi.i2c_write_device(self._h,
-         [MSb | self.E, MSb & ~self.E, LSb | self.E, LSb & ~self.E])
+      data = [MSb | self.E, MSb & ~self.E, LSb | self.E, LSb & ~self.E]
+      print("I2C write: ", data)
+
+      self.pi.i2c_write_device(self._h, data))
+         
+      #self.pi.i2c_write_device(self._h,
+      #   [MSb | self.E, MSb & ~self.E, LSb | self.E, LSb & ~self.E])
 
    def _inst(self, bits):
 
