@@ -243,6 +243,7 @@ try:
 except KeyboardInterrupt:
     print("\nStopping...")
     clear_callbacks(state)
+    time.sleep(1000)
     lcd.close()
     close_adc(pi, adc_handle)
     pi.spi_close(digipot_handle)
