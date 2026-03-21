@@ -16,12 +16,16 @@ from ohmmeter import (
 )
 
 # ── Formula constants (must match voltmeter.py) ───────────────────────────────
+V_MAX     =  5.0
 V_MIN     = -5.0
-V_RANGE   =  10.0
-N_LEVELS  =  MCP4131_MAX_STEPS       # 31 → step 0 = -5V, step 31 = +5V
+ZERO_STEP =  2     # measured: step SAR converges to when Vin = 0V
 
 def step_to_voltage(step):
-    return V_MIN + V_RANGE * step / N_LEVELS
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    if step >= ZERO_STEP:
+        return (step - ZERO_STEP) * V_MAX / (MCP4131_MAX_STEPS - ZERO_STEP)
+    else:
+        return (step - ZERO_STEP) * abs(V_MIN) / ZERO_STEP
 
 
 def _write_dac(pi, spi, step):

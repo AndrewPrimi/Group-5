@@ -66,9 +66,13 @@ V_MAX       =  5.0
 V_MIN       = -5.0
 V_RANGE     = V_MAX - V_MIN          # 10 V total span
 
-_N_LEVELS   = MCP4131_MAX_STEPS      # 31 → step 0 = -5V, step 31 = +5V exactly
+_N_LEVELS   = MCP4131_MAX_STEPS      # 31
 VOLT_STEP_V = V_RANGE / _N_LEVELS    # ~0.3226 V per step
 VOLT_TOL_V  = VOLT_STEP_V            # ±1 LSB
+
+# Hardware zero offset: step the SAR converges to when Vin = 0V.
+# Measured with volt_test.py. Update if hardware changes.
+ZERO_STEP   = 2
 
 # ── Source menu ───────────────────────────────────────────────────────────────
 SRC_EXTERNAL  = 0
@@ -86,13 +90,18 @@ _DEBOUNCE_US  = 200_000   # 200 ms button debounce
 def step_to_voltage(step):
     """Convert a 5-bit SAR step (0–31) to a voltage (V).
 
-    Mapping:
-        step  0 → -5.00 V
-        step 16 →  0.00 V
-        step 31 → +4.69 V  (closest to +5V, within ±0.3125V)
+    Piecewise linear calibration anchored at three points:
+        step  0         → -5.00 V  (hardware floor)
+        step  ZERO_STEP →  0.00 V  (measured hardware zero crossing)
+        step  31        → +5.00 V  (hardware ceiling)
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    return V_MIN + V_RANGE * step / _N_LEVELS
+    if step >= ZERO_STEP:
+        # Positive range: 0V to +5V over (MAX_STEPS - ZERO_STEP) steps
+        return (step - ZERO_STEP) * V_MAX / (MCP4131_MAX_STEPS - ZERO_STEP)
+    else:
+        # Negative range: -5V to 0V over ZERO_STEP steps
+        return (step - ZERO_STEP) * abs(V_MIN) / ZERO_STEP
 
 
 # ── Display helpers ───────────────────────────────────────────────────────────
