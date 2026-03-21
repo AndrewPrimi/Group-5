@@ -40,7 +40,6 @@ class lcd:
         self.addr = None
 
         if addr is None:
-            # Try common PCF8574 / PCF8574A address ranges
             candidate_addrs = [
                 0x27, 0x26, 0x25, 0x24,
                 0x23, 0x22, 0x21, 0x20,
@@ -65,17 +64,21 @@ class lcd:
                 self._init()
 
                 if self.debug:
-                    print(f"LCD initialization attempted at {hex(candidate)}")
+                    print(f"LCD initialization successful at {hex(candidate)}")
 
                 return
 
-            except pigpio.error as e:
+            except Exception as e:
                 last_error = e
+                if self.debug:
+                    print(f"LCD init failed at {hex(candidate)}: {e}")
+
                 try:
                     if self._h is not None:
                         self.pi.i2c_close(self._h)
-                except pigpio.error:
+                except Exception:
                     pass
+
                 self._h = None
                 self.addr = None
 
