@@ -32,6 +32,7 @@ import pigpio
 from square_wave import SquareWaveGenerator, MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP
 from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
+from ohms_steps import CONSTANT_OHMS, MAX_STEPS
 
 # ── Hardware constants ────────────────────────────────────────────────────────
 DC_SPI_CHANNEL = 0
@@ -50,7 +51,6 @@ MIN_DC_VOLT    = -5.0
 MAX_DC_VOLT    =  5.0
 DC_VOLT_STEP   =  0.625
 
-R_KNOWN        = 10_000   # Ω — known series resistor in ohmmeter divider
 
 # ── Display helpers ───────────────────────────────────────────────────────────
 WIDTH          = 20
@@ -146,6 +146,30 @@ def adjust_value(title, value, min_val, max_val, step, fmt):
             time.sleep(0.6)
 
 
+# ── Autoranging ohmmeter ─────────────────────────────────────────────────────
+
+def _autorange_read_ohms(voltmeter):
+    """
+    Try each preset R_known value (100, 1k, 5k, 10k Ω from the digi pot).
+    Score each by how centred the SAR step is — a step near MAX_STEPS/2 means
+    Vin ≈ Vref/2, i.e. R_unknown ≈ R_known, which gives the most accurate reading.
+    Returns the ohms value from the best-scoring range, or None if all are OL.
+    """
+    best_ohms   = None
+    best_margin = -1.0
+
+    for r_known in CONSTANT_OHMS:          # [100, 1000, 5000, 10000]
+        ohms, step = voltmeter.read_ohms(VREF, r_known)
+        if ohms is None:
+            continue
+        margin = 1.0 - abs(step - MAX_STEPS / 2) / (MAX_STEPS / 2)
+        if margin > best_margin:
+            best_margin = margin
+            best_ohms   = ohms
+
+    return best_ohms
+
+
 # ── Live displays ─────────────────────────────────────────────────────────────
 
 def run_live_display(state):
@@ -188,7 +212,7 @@ def run_ohm_live_display(voltmeter):
     _clear()
     print('  Press Enter to stop.\n')
     while True:
-        ohms, _ = voltmeter.read_ohms(VREF, R_KNOWN)
+        ohms = _autorange_read_ohms(voltmeter)
         if ohms is None:
             ohm_str = 'OL  (open circuit)'
         elif ohms >= 1_000:
@@ -198,7 +222,7 @@ def run_ohm_live_display(voltmeter):
         _render([
             'OHMMETER',
             ohm_str,
-            f'Vref={VREF}V  Rk={R_KNOWN}',
+            f'Vref={VREF}V  autorange',
             'Enter: back',
         ])
         if _enter_pressed():
