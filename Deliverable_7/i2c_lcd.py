@@ -322,9 +322,9 @@ if __name__ == "__main__":
         # Leave addr=None so it auto-tries common LCD addresses.
         # If you want to force one, use addr=0x27 or addr=0x24, etc.
         #lcd_display = lcd(pi, addr=None, width=20)
-        lcd_display = lcd(pi, addr=None, width=20, RS=0,
+        lcd_display = i2c_lcd(pi, addr=None, width=20, RS=0,
                           #RW=1,
-                          E=2, BL=3, B4=4)
+                          E=2, BL=3, B4=4, debug=True)
 
         lcd_display.backlight(True)
         lcd_display.clear()
