@@ -67,20 +67,12 @@ V_MIN       = -5.0
 V_RANGE     = V_MAX - V_MIN          # 10 V total span
 
 _N_LEVELS   = MCP4131_MAX_STEPS      # 31
+VOLT_STEP_V = V_RANGE / _N_LEVELS    # ~0.3226 V per step
+VOLT_TOL_V  = VOLT_STEP_V            # ±1 LSB
 
-# Calibration lookup table: (step, voltage) pairs measured with known inputs.
-# The hardware response is nonlinear so a formula alone cannot correct it.
-# Add more points for better accuracy. Must be sorted by step ascending.
-_CALIBRATION = [
-    ( 0, -5.0),
-    ( 1, -1.0),
-    ( 2,  0.0),
-    ( 3,  1.0),
-    ( 5,  2.0),
-    (10,  3.0),
-    (20,  4.0),
-    (31,  5.0),
-]
+# Hardware zero offset: step the SAR converges to when Vin = 0V.
+# Measured with volt_test.py. Update if hardware changes.
+ZERO_STEP   = 2
 
 # ── Source menu ───────────────────────────────────────────────────────────────
 SRC_EXTERNAL  = 0
@@ -96,29 +88,20 @@ _DEBOUNCE_US  = 200_000   # 200 ms button debounce
 # ── Conversion maths ──────────────────────────────────────────────────────────
 
 def step_to_voltage(step):
-    """Convert a 5-bit SAR step (0–31) to a voltage using the calibration table.
+    """Convert a 5-bit SAR step (0–31) to a voltage (V).
 
-    Linearly interpolates between the nearest calibration points.
+    Piecewise linear calibration anchored at three points:
+        step  0         → -5.00 V  (hardware floor)
+        step  ZERO_STEP →  0.00 V  (measured hardware zero crossing)
+        step  31        → +5.00 V  (hardware ceiling)
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    for i in range(len(_CALIBRATION) - 1):
-        s0, v0 = _CALIBRATION[i]
-        s1, v1 = _CALIBRATION[i + 1]
-        if s0 <= step <= s1:
-            t = (step - s0) / (s1 - s0)
-            return v0 + t * (v1 - v0)
-    # Clamp to endpoints
-    return _CALIBRATION[0][1] if step <= _CALIBRATION[0][0] else _CALIBRATION[-1][1]
-
-
-def _local_tol(step):
-    """Return ±tolerance (V) at the given step based on local calibration density."""
-    for i in range(len(_CALIBRATION) - 1):
-        s0, v0 = _CALIBRATION[i]
-        s1, v1 = _CALIBRATION[i + 1]
-        if s0 <= step <= s1:
-            return abs(v1 - v0) / max(s1 - s0, 1)
-    return 0.5
+    if step >= ZERO_STEP:
+        # Positive range: 0V to +5V over (MAX_STEPS - ZERO_STEP) steps
+        return (step - ZERO_STEP) * V_MAX / (MCP4131_MAX_STEPS - ZERO_STEP)
+    else:
+        # Negative range: -5V to 0V over ZERO_STEP steps
+        return (step - ZERO_STEP) * abs(V_MIN) / ZERO_STEP
 
 
 # ── Display helpers ───────────────────────────────────────────────────────────
@@ -161,7 +144,7 @@ def build_measurement_lines(step, source_label="External"):
     elif step >= MCP4131_MAX_STEPS:
         line2 = f"{_fmt_v(step_to_voltage(MCP4131_MAX_STEPS))} (at max)"
     else:
-        line2 = f"{_fmt_v(v)} +/-{_local_tol(step):.4f}V"
+        line2 = f"{_fmt_v(v)} +/-{VOLT_TOL_V:.4f}V"
 
     return "Voltmeter", f"Src: {source_label}", line2, "Btn: back"
 
