@@ -12,13 +12,67 @@ import time
 
 class lcd:
     """
-    LCD driver for HD44780 displays using a PCF8574/PCF8574T style I2C backpack.
+    This class provides simple functions to display text on an I2C LCD
+    based on the PCF8574T I2C 8-bit port expander. 
+    
+    PCF8574T P7   P6   P5   P4   P3   P2   P1   P0
+    HD44780  B7   B6   B5   B4   BL   E    RW   RS
 
-    Default backpack bit mapping assumed:
-        PCF8574T P7   P6   P5   P4   P3   P2   P1   P0
-        HD44780  B7   B6   B5   B4   BL   E    RW   RS
+    This code defaults to working with an adapter with the above
+    configuration.
 
-    If your backpack differs, change the constructor mapping pins.
+    If yours is different you will have to specify the mapping
+    when you instantiate the LCD.
+    """ 
+
+    """
+    Commands
+
+    LCD_CLEARDISPLAY = 0x01
+    LCD_RETURNHOME = 0x02
+    LCD_ENTRYMODESET = 0x04
+    LCD_DISPLAYCONTROL = 0x08
+    LCD_CURSORSHIFT = 0x10
+    LCD_FUNCTIONSET = 0x20
+    LCD_SETCGRAMADDR = 0x40
+    LCD_SETDDRAMADDR = 0x80
+
+    Flags for display entry mode 
+
+    LCD_ENTRYRIGHT = 0x00
+    LCD_ENTRYLEFT = 0x02
+    LCD_ENTRYSHIFTINCREMENT = 0x01
+    LCD_ENTRYSHIFTDECREMENT = 0x00
+
+    Flags for display on/off control
+
+    LCD_DISPLAYON = 0x04
+    LCD_DISPLAYOFF = 0x00
+    LCD_CURSORON = 0x02
+    LCD_CURSOROFF = 0x00
+    LCD_BLINKON = 0x01
+    LCD_BLINKOFF = 0x00
+
+    Flags for display/cursor shift
+
+    LCD_DISPLAYMOVE = 0x08
+    LCD_CURSORMOVE = 0x00
+    LCD_MOVERIGHT = 0x04
+    LCD_MOVELEFT = 0x00
+
+    Flags for function set
+
+    LCD_8BITMODE = 0x10
+    LCD_4BITMODE = 0x00
+    LCD_2LINE = 0x08
+    LCD_1LINE = 0x00
+    LCD_5x10DOTS = 0x04
+    LCD_5x8DOTS = 0x00
+ 
+    Flags for backlight control
+
+    LCD_BACKLIGHT = 0x08
+    LCD_NOBACKLIGHT = 0x00
     """
 
     _LCD_ROW = [0x80, 0xC0, 0x94, 0xD4]
@@ -243,14 +297,14 @@ if __name__ == "__main__":
         # Leave addr=None so it auto-tries common LCD addresses.
         # If you want to force one, use addr=0x27 or addr=0x24, etc.
         #lcd_display = lcd(pi, addr=None, width=20, debug=True)
-        lcd_display = lcd(pi, addr=0x27, width=20, RS=0, RW=1, E=4, BL=3, B4=2)
+        lcd_display = lcd(pi, addr=None, width=20, RS=0, RW=1, E=4, BL=3, B4=2)
 
         lcd_display.backlight(True)
         lcd_display.clear()
 
         lcd_display.put_line(0, "LCD Test")
         lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
-        lcd_display.put_line(2, "Hello Logan")
+        lcd_display.put_line(2, "Hello World")
         lcd_display.put_line(3, "It is working")
 
         time.sleep(5)
