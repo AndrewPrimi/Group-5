@@ -234,7 +234,7 @@ class lcd:
         time.sleep(0.005)
         self._inst(0x06)
         self._inst(0x0C)"""
-
+        
     def _byte(self, MSb, LSb):
 
         if self.backlight_on:
@@ -383,12 +383,12 @@ if __name__ == "__main__":
                           #RW=1,
                           E=2, BL=3, B4=4, debug=True)
 
-        #lcd_display.backlight(True)
+        lcd_display.backlight(True)
         #lcd_display.clear()
         #time.sleep(2)
         
         lcd_display.put_line(0, "LCD Test")
-        lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
+        """lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
         lcd_display.put_line(2, "Hello World")
         lcd_display.put_line(3, "It is working")
 
@@ -401,7 +401,7 @@ if __name__ == "__main__":
             lcd_display.put_line(2, time.strftime("%b %d %H:%M:%S"))
             lcd_display.put_line(3, f"Count: {count}")
             count += 1
-            time.sleep(1)
+            time.sleep(1)"""
         
     except KeyboardInterrupt:
         print("\nExiting on Ctrl+C")
