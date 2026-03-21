@@ -13,8 +13,8 @@ import time
 class lcd:
     """
     This class provides simple functions to display text on an I2C LCD
-    based on the PCF8574T I2C 8-bit port expander. 
-    
+    based on the PCF8574T I2C 8-bit port expander.
+
     PCF8574T P7   P6   P5   P4   P3   P2   P1   P0
     HD44780  B7   B6   B5   B4   BL   E    RW   RS
 
@@ -23,7 +23,7 @@ class lcd:
 
     If yours is different you will have to specify the mapping
     when you instantiate the LCD.
-    """ 
+    """
 
     """
     Commands
@@ -37,7 +37,7 @@ class lcd:
     LCD_SETCGRAMADDR = 0x40
     LCD_SETDDRAMADDR = 0x80
 
-    Flags for display entry mode 
+    Flags for display entry mode
 
     LCD_ENTRYRIGHT = 0x00
     LCD_ENTRYLEFT = 0x02
@@ -68,7 +68,7 @@ class lcd:
     LCD_1LINE = 0x00
     LCD_5x10DOTS = 0x04
     LCD_5x8DOTS = 0x00
- 
+
     Flags for backlight control
 
     LCD_BACKLIGHT = 0x08
@@ -77,9 +77,8 @@ class lcd:
 
     _LCD_ROW = [0x80, 0xC0, 0x94, 0xD4]
 
-    
     def __init__(self, pi, bus=1, addr=0x27, width=20, backlight_on=True,
-                 RS=0, 
+                 RS=0,
                  #RW=1,
                  E=2, BL=3, B4=4, debug=True):
 
@@ -141,7 +140,7 @@ class lcd:
                 self.addr = None
 
         self._init()
-                     
+
         raise RuntimeError(
             f"Could not open/init LCD on any tested I2C address. Last error: {last_error}"
         )
@@ -156,11 +155,12 @@ class lcd:
             self._byte(0x00, 0x00)
         except Exception:
             pass'''
-"""
+
+    """
     def _init(self):
-        
+
         Initialize LCD in 4-bit mode with conservative delays.
-        
+
         time.sleep(0.05)
 
         self._inst(0x33) # Initialise 1
@@ -179,14 +179,15 @@ class lcd:
         #time.sleep(0.001)
 
         self._inst(0x01)   # clear display
-        #time.sleep(0.002)'''
+        #time.sleep(0.002)
 
-        self._inst(0x33) # Initialise 1 
+        self._inst(0x33) # Initialise 1
         self._inst(0x32) # Initialise 2
-        self._inst(0x06) # Cursor increment 
-        self._inst(0x0C) # Display on,move_to off, blink off 
-        self._inst(0x28) # 4-bits, 1 line, 5x8 font 
-        self._inst(0x01) # Clear display"""
+        self._inst(0x06) # Cursor increment
+        self._inst(0x0C) # Display on, cursor off, blink off
+        self._inst(0x28) # 4-bits, 1 line, 5x8 font
+        self._inst(0x01) # Clear display
+    """
 
     def _init(self):
         time.sleep(0.05)
@@ -208,9 +209,9 @@ class lcd:
         time.sleep(0.005)
         self._inst(0x06)
         self._inst(0x0C)
-        
+
     def _byte(self, MSb, LSb):
-        
+
         if self.backlight_on:
             MSb |= self.BL
             LSb |= self.BL
@@ -223,15 +224,15 @@ class lcd:
 
     def _pulse(self, data):
         data &= 0xFF
-        
+
         # Enable HIGH
         self.pi.i2c_write_device(self._h, [data | self.E])
         time.sleep(0.001)
-    
+
         # Enable LOW
         self.pi.i2c_write_device(self._h, [data & ~self.E])
         time.sleep(0.001)
-    
+
     def _inst(self, bits):
         """
         Send instruction byte.
@@ -244,7 +245,6 @@ class lcd:
 
         self._byte(MSb, LSb)
 
-    # NEW
     def _write4bits(self, nibble):
         data = (nibble << self.B4) & 0xFF
 
@@ -252,7 +252,7 @@ class lcd:
             data |= self.BL
 
         self._pulse(data)
-    
+
     def _data(self, bits):
         """
         Send data byte.
@@ -332,7 +332,7 @@ class lcd:
         self._inst(0x01)
         if self._h is not None:
             try:
-                self.pi.i2c_close(self._h) 
+                self.pi.i2c_close(self._h)
             except pigpio.error:
                 pass
             self._h = None
@@ -343,7 +343,7 @@ if __name__ == "__main__":
     import i2c_lcd
     import pigpio
     import time
-    
+
     pi = pigpio.pi()
     if not pi.connected:
         print("pigpio is not connected. Start it with: sudo pigpiod")
@@ -388,5 +388,3 @@ if __name__ == "__main__":
         except Exception:
             pass
         pi.stop()
-   
-   
