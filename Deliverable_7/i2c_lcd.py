@@ -78,7 +78,9 @@ class lcd:
     _LCD_ROW = [0x80, 0xC0, 0x94, 0xD4]
 
     def __init__(self, pi, bus=1, addr=0x27, width=20, backlight_on=True,
-                 RS=0, '''RW=1,''' E=2, BL=3, B4=4):
+                 RS=0, 
+                 #RW=1,
+                 E=2, BL=3, B4=4):
 
         self.pi = pi
         self.width = width
