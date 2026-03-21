@@ -136,12 +136,6 @@ def ohms_to_step(ohms):
     Clamps the input to [0, MAXIMUM_OHMS] before converting so out-of-range
     values don't produce invalid steps.
     """
-    #ohms = 0.9204 * ohms + 89
-    #ohms = 1.0865 * ohms
-
-    #ohms = max(0, min(ohms, MAXIMUM_OHMS))
-    #step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS) 
-    #return step
     
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
@@ -152,12 +146,14 @@ def step_to_ohms(step):
 
     This is the inverse of ohms_to_step (with minor rounding differences).
     """
-    raw_ohms = (step / MAX_STEPS) * MAXIMUM_OHMS 
+    raw_ohms = int((step / MAX_STEPS) * MAXIMUM_OHMS)
+    closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
+    return listOfOhms[closest_key]
     
-    #corrected_ohms = raw_ohms - 96.692
-    #corrected_ohms = 1.5 * raw_ohms - 150
 
-    ohms = min(listOfOhms, key=lambda k: abs(listOfOhms[k] - raw_ohms))
-    return ohms
-
-    #return corrected_ohms
+if __name__ == "__main__":
+    ohms = 9100
+    x = ohms_to_step(ohms)
+    print("Step: ", x)
+    y = step_to_ohms(x)
+    print("Back to Ohms: ", y)
