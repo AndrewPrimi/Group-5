@@ -70,6 +70,11 @@ _N_LEVELS   = MCP4131_MAX_STEPS + 1  # 32 levels → 0.3125 V/step
 VOLT_STEP_V = V_RANGE / _N_LEVELS    # exactly 0.3125 V per step
 VOLT_TOL_V  = VOLT_STEP_V            # ±1 LSB
 
+# Calibrated zero offset: the step the SAR converges to when Vin = 0V.
+# Due to MCP4131 wiper resistance and op-amp offset, step 0 ≠ 0V.
+# Measure with volt_test.py and update this value if hardware changes.
+ZERO_STEP   = 2
+
 # ── Source menu ───────────────────────────────────────────────────────────────
 SRC_EXTERNAL  = 0
 SRC_INTERNAL  = 1
@@ -92,7 +97,7 @@ def step_to_voltage(step):
         step 31 → +4.69 V  (closest to +5V, within ±0.3125V)
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    return V_MIN + V_RANGE * step / _N_LEVELS
+    return V_RANGE * (step - ZERO_STEP) / _N_LEVELS
 
 
 # ── Display helpers ───────────────────────────────────────────────────────────
