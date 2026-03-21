@@ -80,7 +80,7 @@ class lcd:
     def __init__(self, pi, bus=1, addr=0x27, width=20, backlight_on=True,
                  RS=0, 
                  #RW=1,
-                 E=2, BL=3, B4=4):
+                 E=2, BL=3, B4=4, debug=True):
 
         self.pi = pi
         self.width = width
