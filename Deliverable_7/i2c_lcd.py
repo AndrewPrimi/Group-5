@@ -92,9 +92,8 @@ class lcd:
         self.BL = (1 << BL)
         self.B4 = B4
 
-        #self._h = None
-        self._h = pi.i2c_open(bus, addr)
-        self.addr = 0x27
+        self._h   = None
+        self.addr = addr
 
         if addr is None:
             candidate_addrs = [
@@ -138,8 +137,6 @@ class lcd:
 
                 self._h = None
                 self.addr = None
-
-        self._init()
 
         raise RuntimeError(
             f"Could not open/init LCD on any tested I2C address. Last error: {last_error}"
@@ -255,7 +252,7 @@ class lcd:
         time.sleep(0.001)
 
         # Enable LOW
-        self.pi.i2c_write_device(self._h, [data & ~self.E])
+        self.pi.i2c_write_device(self._h, [(data & ~self.E) & 0xFF])
         time.sleep(0.001)
 
     def _inst(self, bits):
@@ -388,7 +385,7 @@ if __name__ == "__main__":
         #time.sleep(2)
         
         lcd_display.put_line(0, "LCD Test")
-        """lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
+        lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
         lcd_display.put_line(2, "Hello World")
         lcd_display.put_line(3, "It is working")
 
@@ -401,7 +398,7 @@ if __name__ == "__main__":
             lcd_display.put_line(2, time.strftime("%b %d %H:%M:%S"))
             lcd_display.put_line(3, f"Count: {count}")
             count += 1
-            time.sleep(1)"""
+            time.sleep(1)
         
     except KeyboardInterrupt:
         print("\nExiting on Ctrl+C")
