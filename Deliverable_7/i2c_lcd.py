@@ -190,9 +190,34 @@ class lcd:
     """
 
     def _init(self):
-        time.sleep(0.05)
+        time.sleep(0.1)
 
-        self._write4bits(0x03)
+        for _ in range(3):
+            self._write4bits(0x03)
+            time.sleep(0.005)
+
+        self._write4bits(0x02)
+        time.sleep(0.005)
+
+        self._inst(0x28)
+        time.sleep(0.001)
+
+        # Display OFF
+        self._inst(0x08)
+        time.sleep(0.001)
+
+        # Clear Display
+        self._inst(0x01)
+        time.sleep(0.005)
+
+        # Entry mode
+        self._inst(0x06)
+        time.sleep(0.005)
+
+        # Display ON
+        self._inst(0x0C)
+        time.sleep(0.001)
+        """self._write4bits(0x03)
         time.sleep(0.005)
 
         self._write4bits(0x03)
@@ -208,7 +233,7 @@ class lcd:
         self._inst(0x01)
         time.sleep(0.005)
         self._inst(0x06)
-        self._inst(0x0C)
+        self._inst(0x0C)"""
 
     def _byte(self, MSb, LSb):
 
