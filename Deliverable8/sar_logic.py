@@ -52,7 +52,7 @@ class SAR_ADC:
         Returns the best step value.
         """
         low = 0
-        high = MAX_STEPS
+        high = MAX_STEPS - 1
         
         # Binary search algorithm
         while low <= high:
