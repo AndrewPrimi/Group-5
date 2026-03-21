@@ -152,7 +152,8 @@ try:
                 
             step = ohms_to_step(state['ohms'])
             lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
-            lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+            #lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
+            lcd.put_line(1, f'Ohms: {5000}')
             lcd.put_line(2, '')
             lcd.put_line(3, '')
 

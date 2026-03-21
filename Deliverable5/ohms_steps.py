@@ -146,9 +146,10 @@ def step_to_ohms(step):
 
     This is the inverse of ohms_to_step (with minor rounding differences).
     """
-    raw_ohms = int((step / MAX_STEPS) * MAXIMUM_OHMS)
-    closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
-    return listOfOhms[closest_key]
+    #raw_ohms = int((step / MAX_STEPS) * MAXIMUM_OHMS)
+    #closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
+    #return listOfOhms[closest_key]
+    return 0
     
 
 if __name__ == "__main__":
