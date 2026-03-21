@@ -10,10 +10,7 @@ preset values, and two functions that convert between ohms and step values.
 MINIMUM_OHMS = 100        # lowest settable resistance (ohms)
 MAXIMUM_OHMS = 10000      # full-scale resistance (ohms)
 MAX_STEPS = 128           # 7-bit wiper: 0 to 128 inclusive
-#MAX_STEPS = 31            # 5-bit wiper: 0 to 31 inclusive???
 DEFAULT_OHMS = 5000       # starting resistance on page load
-
-SLOPE = (MAXIMUM_OHMS - MINIMUM_OHMS) / MAX_STEPS
 
 # ── Debounce ─────────────────────────────────────────────
 BUTTON_DEBOUNCE_US = 200000    # 200 ms – ignore button presses within this window
@@ -39,11 +36,8 @@ def ohms_to_step(ohms):
     #ohms = 1.0865 * ohms
     #ohms = max(0, min(ohms, MAXIMUM_OHMS))
     
-    #step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
-
-    step = int((ohms - MINIMUM_OHMS) / SLOPE)
-    return max(0, min(MAX_STEPS, step))
-    #return step
+    step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
+    return step
 
 
 def step_to_ohms(step):
@@ -52,12 +46,10 @@ def step_to_ohms(step):
     This is the inverse of ohms_to_step (with minor rounding differences).
     """
 
-    #raw_ohms = ((step / MAX_STEPS) * MAXIMUM_OHMS) * 100
-        
+    raw_ohms = (step / MAX_STEPS) * MAXIMUM_OHMS 
+    
     #corrected_ohms = raw_ohms - 96.692
     #corrected_ohms = 1.5 * raw_ohms - 150
-
-    raw_ohms = MINIMUM_OHMS + step * SLOPE
     
     return raw_ohms
     #return corrected_ohms
