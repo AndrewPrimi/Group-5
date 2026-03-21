@@ -77,6 +77,7 @@ class lcd:
 
     _LCD_ROW = [0x80, 0xC0, 0x94, 0xD4]
 
+    
     def __init__(self, pi, bus=1, addr=0x27, width=20, backlight_on=True,
                  RS=0, 
                  #RW=1,
@@ -155,7 +156,7 @@ class lcd:
             self._byte(0x00, 0x00)
         except Exception:
             pass'''
-
+'''
     def _init(self):
         """
         Initialize LCD in 4-bit mode with conservative delays.
@@ -185,9 +186,31 @@ class lcd:
         self._inst(0x06) # Cursor increment 
         self._inst(0x0C) # Display on,move_to off, blink off 
         self._inst(0x28) # 4-bits, 1 line, 5x8 font 
-        self._inst(0x01) # Clear display
+        self._inst(0x01) # Clear display'''
+
+    def _init(self):
+        time.sleep(0.05)
+
+        self._write4bits(0x03)
+        time.sleep(0.005)
+
+        self._write4bits(0x03)
+        time.sleep(0.005)
+
+        self._write4bits(0x03)
+        time.sleep(0.005)
+
+        self._write4bits(0x02)  # 4-bit mode
+
+        self._inst(0x28)
+        self._inst(0x08)
+        self._inst(0x01)
+        time.sleep(0.005)
+        self._inst(0x06)
+        self._inst(0x0C)
         
     def _byte(self, MSb, LSb):
+        
         if self.backlight_on:
             MSb |= self.BL
             LSb |= self.BL
@@ -199,13 +222,15 @@ class lcd:
         self._pulse(LSb)
 
     def _pulse(self, data):
+        data &= 0xFF
+        
         # Enable HIGH
         self.pi.i2c_write_device(self._h, [data | self.E])
-        time.sleep(0.0005)
+        time.sleep(0.001)
     
         # Enable LOW
         self.pi.i2c_write_device(self._h, [data & ~self.E])
-        time.sleep(0.0001)
+        time.sleep(0.001)
     
     def _inst(self, bits):
         """
@@ -219,6 +244,15 @@ class lcd:
 
         self._byte(MSb, LSb)
 
+    # NEW
+    def _write4bits(self, nibble):
+        data = (nibble << self.B4) & 0xFF
+
+        if self.backlight_on:
+            data |= self.BL
+
+        self._pulse(data)
+    
     def _data(self, bits):
         """
         Send data byte.
