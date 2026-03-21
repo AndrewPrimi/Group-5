@@ -239,7 +239,7 @@ if __name__ == "__main__":
     try:
         # Leave addr=None so it auto-tries common LCD addresses.
         # If you want to force one, use addr=0x27 or addr=0x24, etc.
-        lcd_display = lcd(pi, addr=None, width=20, debug=True)
+        lcd_display = lcd(pi, addr=0x27, width=20, debug=True)
 
         lcd_display.backlight(True)
         lcd_display.clear()
