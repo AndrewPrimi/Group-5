@@ -33,9 +33,9 @@ def ohms_to_step(ohms):
     Clamps the input to [0, MAXIMUM_OHMS] before converting so out-of-range
     values don't produce invalid steps.
     """
-    ohms = 0.9204 * ohms + 89
-    ohms = 1.0865 * ohms
-    ohms = max(0, min(ohms, MAXIMUM_OHMS))
+    #ohms = 0.9204 * ohms + 89
+    #ohms = 1.0865 * ohms
+    #ohms = max(0, min(ohms, MAXIMUM_OHMS))
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
 
@@ -48,7 +48,7 @@ def step_to_ohms(step):
 
     raw_ohms = (step / MAX_STEPS) * MAXIMUM_OHMS
 
-    corrected_ohms = raw_ohms - 96.692
+    #corrected_ohms = raw_ohms - 96.692
     
     #corrected_ohms = 1.5 * raw_ohms - 150
 
