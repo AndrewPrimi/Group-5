@@ -209,7 +209,18 @@ class lcd:
                 time.sleep(0.01)
 
         raise RuntimeError(f"LCD I2C write failed at {hex(self.addr)} with data {data}")
+        
+    def _byte(self, MSb, LSb):
+        if self.backlight_on:
+            MSb |= self.BL
+            LSb |= self.BL
 
+        # Send high nibble
+        self._pulse(MSb)
+
+        # Send low nibble
+        self._pulse(LSb)
+    
     def _inst(self, bits):
         """
         Send instruction byte.
