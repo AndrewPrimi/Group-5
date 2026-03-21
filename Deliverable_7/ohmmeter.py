@@ -54,7 +54,7 @@ R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
 # DAC settle time after each SPI write before reading comparator
-_SETTLE_S = 0.002   # 2 ms
+_SETTLE_S = 0.02   # 20 ms
 
 
 def open_adc(pi):

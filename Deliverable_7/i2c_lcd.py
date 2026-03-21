@@ -4,6 +4,9 @@
 # 2016-04-20
 # Public Domain
 
+import pigpio
+import time
+
 class lcd:
 
    """
@@ -86,7 +89,7 @@ class lcd:
 
       self._h = pi.i2c_open(bus, addr)
       print("LCD handle:", self._h, "addr:", hex(addr))
-      
+      time.sleep(0.05)
       self._init()
 
    def backlight(self, on):
@@ -111,9 +114,15 @@ class lcd:
          LSb |= self.BL
 
       data = [MSb | self.E, MSb & ~self.E, LSb | self.E, LSb & ~self.E]
-      
-      self.pi.i2c_write_device(self._h, data)
-         
+
+      for _ in range(3):
+         try:
+            self.pi.i2c_write_device(self._h, data)
+            return
+         except pigpio.error:
+            time.sleep(0.01)
+
+      print("LCD I2C write failed:", data)
       #self.pi.i2c_write_device(self._h,
       #   [MSb | self.E, MSb & ~self.E, LSb | self.E, LSb & ~self.E])
 

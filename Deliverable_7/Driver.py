@@ -96,6 +96,7 @@ state = {
     'isOhmPage':        False,
     'button_last_tick': None,
     'active_callbacks': [],
+    'last_step': None,
 }
 
 setup_callbacks(state, pi, lcd)
@@ -122,8 +123,7 @@ def run_main_menu():
     _redraw_main_menu()
 
     decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
-    #cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)
-    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, menu_button_callback)
+    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)
     state['active_callbacks'] = [decoder, cb_btn]
 
     while state['isMainPage']:
@@ -154,6 +154,12 @@ def run_ohmmeter():
             last_update = now
             #step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=5)
             step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=11)
+
+            if state['last_step'] is None or abs(step - state['last_step']) >= 2:
+                state['last_step'] = step
+
+            stable_step = state['last_step']
+            
             l0, l1, l2, l3 = build_display_lines(step)
             lcd.put_line(0, l0)
             lcd.put_line(1, l1)
