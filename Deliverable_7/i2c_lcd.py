@@ -111,8 +111,7 @@ class lcd:
          LSb |= self.BL
 
       data = [MSb | self.E, MSb & ~self.E, LSb | self.E, LSb & ~self.E]
-      print("I2C write: ", data)
-
+      
       self.pi.i2c_write_device(self._h, data)
          
       #self.pi.i2c_write_device(self._h,
