@@ -54,7 +54,7 @@ R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
 # DAC settle time after each SPI write before reading comparator
-_SETTLE_S = 0.005   # 5 ms
+_SETTLE_S = 0.002   # 2 ms
 
 
 def open_adc(pi):
@@ -98,7 +98,8 @@ def sar_measure(pi, spi_handle, comp_pin):
         comp = pi.read(comp_pin)
         print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 1 else 'DISCARD'}")
 
-        if comp == 1:
+        #if comp == 1:
+        if comp == 0:
             step = trial
         
     # Final write to leave DAC at the converged value
