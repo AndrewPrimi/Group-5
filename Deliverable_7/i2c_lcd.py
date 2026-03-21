@@ -158,10 +158,10 @@ class lcd:
             pass'''
 """
     def _init(self):
-        """
+        
         Initialize LCD in 4-bit mode with conservative delays.
-        """
-        """time.sleep(0.05)
+        
+        time.sleep(0.05)
 
         self._inst(0x33) # Initialise 1
         #time.sleep(0.005)
