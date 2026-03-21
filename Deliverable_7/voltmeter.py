@@ -12,9 +12,9 @@ Hardware:
   Scaling:  Vin_scaled = (Vin + 5) * 3.3 / 10
   Inverse:  Vin = DAC_voltage * 10 / 3.3 - 5  =  10 * step / 31 - 5
 
-Measurement range : ±5 V
-Resolution        : 10 V / 31 = 0.3226 V per step  (5-bit SAR)
-Tolerance (±1 LSB): ±0.3226 V
+Measurement range : ±5 V  (step 0 = -5V, step 16 = 0V, step 31 ≈ +4.69V)
+Resolution        : 10 V / 32 = 0.3125 V per step  (5-bit SAR)
+Tolerance (±1 LSB): ±0.3125 V
 
 Source menu items:
   0 – External       (measure voltage from external supply)
@@ -26,17 +26,48 @@ Source menu items:
 import time
 import pigpio
 
-from ohmmeter import averaged_measure, MCP4131_MAX_STEPS, COMPARATOR_PIN
+from ohmmeter import MCP4131_MAX_STEPS, COMPARATOR_PIN, ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS, _SETTLE_S
 from callbacks import clear_callbacks, PIN_A, PIN_B, ROTARY_BTN_PIN
 import rotary_encoder
+
+
+# ── SAR measurement (voltmeter-specific, no debug prints) ─────────────────────
+
+def _write_dac(pi, spi_handle, step):
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
+
+
+def _sar_measure(pi, spi_handle, comp_pin):
+    """5-bit SAR conversion. Returns best-match step (0–31).
+
+    Comparator wired: V+ = Vin, V- = wiper
+      comp=0 (LOW)  → Vin > wiper → DAC too small → keep bit
+      comp=1 (HIGH) → Vin < wiper → DAC too large → discard
+    """
+    step = 0
+    for bit_pos in range(4, -1, -1):
+        trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
+        _write_dac(pi, spi_handle, trial)
+        time.sleep(_SETTLE_S)
+        if pi.read(comp_pin) == 0:
+            step = trial
+    _write_dac(pi, spi_handle, step)
+    return step
+
+
+def _averaged_measure(pi, spi_handle, comp_pin, n=5):
+    """Return the median step from n SAR conversions."""
+    readings = sorted(_sar_measure(pi, spi_handle, comp_pin) for _ in range(n))
+    return readings[n // 2]
 
 # ── Voltage range ─────────────────────────────────────────────────────────────
 V_MAX       =  5.0
 V_MIN       = -5.0
 V_RANGE     = V_MAX - V_MIN          # 10 V total span
 
-_N_LEVELS   = MCP4131_MAX_STEPS      # 31 steps (0–31)
-VOLT_STEP_V = V_RANGE / _N_LEVELS    # ~0.3226 V per step
+_N_LEVELS   = MCP4131_MAX_STEPS + 1  # 32 levels → 0.3125 V/step
+VOLT_STEP_V = V_RANGE / _N_LEVELS    # exactly 0.3125 V per step
 VOLT_TOL_V  = VOLT_STEP_V            # ±1 LSB
 
 # ── Source menu ───────────────────────────────────────────────────────────────
@@ -57,7 +88,8 @@ def step_to_voltage(step):
 
     Mapping:
         step  0 → -5.00 V
-        step 31 → +5.00 V
+        step 16 →  0.00 V
+        step 31 → +4.69 V  (closest to +5V, within ±0.3125V)
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
     return V_MIN + V_RANGE * step / _N_LEVELS
@@ -93,7 +125,7 @@ def build_measurement_lines(step, source_label="External"):
 
     Line 0 : 'Voltmeter'
     Line 1 : 'Src: <source_label>'
-    Line 2 : '+2.50V +/-0.3226V'
+    Line 2 : '+2.50V +/-0.3125V'
     Line 3 : 'Btn: back'
     """
     v = step_to_voltage(step)
@@ -179,7 +211,7 @@ def run_measurement(state, pi, lcd, adc_handle,
         now = time.time()
         if now - last_update >= interval:
             last_update = now
-            step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=5)
+            step = _averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=5)
             l0, l1, l2, l3 = build_measurement_lines(step, source_label)
             lcd.put_line(0, l0)
             lcd.put_line(1, l1)
