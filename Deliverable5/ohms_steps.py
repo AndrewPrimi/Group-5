@@ -129,7 +129,7 @@ listOfOhms = {
     10000 : 6512000
 }    
 
-
+'''
 def ohms_to_step(ohms):
     """Convert a desired resistance (ohms) to a wiper step (0-128).
 
@@ -139,8 +139,23 @@ def ohms_to_step(ohms):
     
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
+'''
 
+def ohms_to_step(ohms):
+    """Convert desired resistance to best step using calibration."""
 
+    # Clamp input
+    ohms = max(MINIMUM_OHMS, min(MAXIMUM_OHMS, ohms))
+
+    # Find closest available calibrated point
+    closest = min(listOfOhms.keys(), key=lambda k: abs(k - ohms))
+
+    # Convert that to step
+    step = int((closest / MAXIMUM_OHMS) * MAX_STEPS)
+
+    return step
+
+'''
 def step_to_ohms(step):
     """Convert a wiper step (0-128) back to an approximate resistance (ohms).
 
@@ -150,7 +165,19 @@ def step_to_ohms(step):
     #closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
     #return listOfOhms[closest_key]
     return 0
-    
+'''
+
+
+def step_to_ohms(step):
+    """Convert step to approximate ohms using calibration."""
+
+    # Convert step → ideal ohms
+    ideal = (step / MAX_STEPS) * MAXIMUM_OHMS
+
+    # Snap to nearest calibrated value
+    closest = min(listOfOhms.keys(), key=lambda k: abs(k - ideal))
+
+    return closest
 
 if __name__ == "__main__":
     ohms = 9100
