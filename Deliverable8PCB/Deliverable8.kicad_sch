@@ -3443,7 +3443,7 @@
 		)
 		(uuid "77beef9d-2ccd-4b10-b1ce-b1f85e3e7e26")
 	)
-	(text "Sqaure Wave/ DC Reference Design"
+	(text "Square Wave/ DC Reference Design"
 		(exclude_from_sim no)
 		(at 353.06 309.88 0)
 		(effects
