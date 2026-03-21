@@ -384,10 +384,12 @@ if __name__ == "__main__":
                           E=2, BL=3, B4=4, debug=True)
 
         lcd_display.backlight(True)
-        #lcd_display.clear()
-        #time.sleep(2)
+        lcd_display.clear()
+        time.sleep(2)
         
         lcd_display.put_line(0, "LCD Test")
+
+        time.sleep(5)
         """lcd_display.put_line(1, f"Addr: {hex(lcd_display.addr)}")
         lcd_display.put_line(2, "Hello World")
         lcd_display.put_line(3, "It is working")
