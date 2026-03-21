@@ -96,7 +96,7 @@ state = {
     'isOhmPage':        False,
     'button_last_tick': None,
     'active_callbacks': [],
-    'last_step': None,
+    #'last_step': None,
 }
 
 setup_callbacks(state, pi, lcd)
@@ -155,10 +155,10 @@ def run_ohmmeter():
             #step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=5)
             step = averaged_measure(pi, adc_handle, COMPARATOR_PIN, n=11)
 
-            if state['last_step'] is None or abs(step - state['last_step']) >= 2:
-                state['last_step'] = step
+            #if state['last_step'] is None or abs(step - state['last_step']) >= 2:
+            #    state['last_step'] = step
 
-            stable_step = state['last_step']
+            #stable_step = state['last_step']
             
             l0, l1, l2, l3 = build_display_lines(step)
             lcd.put_line(0, l0)
