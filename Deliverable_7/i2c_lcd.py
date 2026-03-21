@@ -77,8 +77,8 @@ class lcd:
 
     _LCD_ROW = [0x80, 0xC0, 0x94, 0xD4]
 
-    def __init__(self, pi, bus=1, addr=None, width=20, backlight_on=True,
-                 RS=0, """RW=1,""" E=2, BL=3, B4=4, debug=True):
+    def __init__(self, pi, bus=1, addr=0x27, width=20, backlight_on=True,
+                 RS=0, """RW=1,""" E=2, BL=3, B4=4):
 
         self.pi = pi
         self.width = width
@@ -90,7 +90,8 @@ class lcd:
         self.BL = (1 << BL)
         self.B4 = B4
 
-        self._h = None
+        #self._h = None
+        self._h = pi.i2c_open(bus, addr)
         self.addr = None
 
         if addr is None:
@@ -136,6 +137,8 @@ class lcd:
                 self._h = None
                 self.addr = None
 
+        self._init()
+                     
         raise RuntimeError(
             f"Could not open/init LCD on any tested I2C address. Last error: {last_error}"
         )
@@ -146,34 +149,41 @@ class lcd:
         """
         self.backlight_on = on
         # Push a harmless write so the state changes on the backpack
-        try:
+        '''try:
             self._byte(0x00, 0x00)
         except Exception:
-            pass
+            pass'''
 
     def _init(self):
         """
         Initialize LCD in 4-bit mode with conservative delays.
         """
-        time.sleep(0.05)
+        '''time.sleep(0.05)
 
-        self._inst(0x33)
-        time.sleep(0.005)
+        self._inst(0x33) # Initialise 1
+        #time.sleep(0.005)
 
-        self._inst(0x32)
-        time.sleep(0.005)
+        self._inst(0x32) # Initialise 2
+        #time.sleep(0.005)
 
         self._inst(0x28)   # 4-bit, 2 line, 5x8 font
-        time.sleep(0.001)
+        #time.sleep(0.001)
 
         self._inst(0x0C)   # display on, cursor off, blink off
-        time.sleep(0.001)
+        #time.sleep(0.001)
 
         self._inst(0x06)   # entry mode set: increment
-        time.sleep(0.001)
+        #time.sleep(0.001)
 
         self._inst(0x01)   # clear display
-        time.sleep(0.002)
+        #time.sleep(0.002)'''
+
+        self._inst(0x33) # Initialise 1 
+        self._inst(0x32) # Initialise 2
+        self._inst(0x06) # Cursor increment 
+        self._inst(0x0C) # Display on,move_to off, blink off 
+        self._inst(0x28) # 4-bits, 1 line, 5x8 font 
+        self._inst(0x01) # Clear display
 
     def _byte(self, MSb, LSb):
         """
@@ -274,7 +284,7 @@ class lcd:
         """
         Clear and close LCD.
         """
-        try:
+        '''try:
             self.clear()
         except Exception:
             pass
@@ -284,10 +294,23 @@ class lcd:
                 self.pi.i2c_close(self._h)
             except pigpio.error:
                 pass
+            self._h = None'''
+
+        self._inst(0x01)
+        if self._h is not None:
+            try:
+                self.pi.i2c_close(self._h) 
+            except pigpio.error:
+                pass
             self._h = None
 
 
 if __name__ == "__main__":
+
+    import i2c_lcd
+    import pigpio
+    import time
+    
     pi = pigpio.pi()
     if not pi.connected:
         print("pigpio is not connected. Start it with: sudo pigpiod")
