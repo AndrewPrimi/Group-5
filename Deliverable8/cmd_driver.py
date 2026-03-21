@@ -43,7 +43,7 @@ VM_SPI_SPEED   = 50_000
 VM_SPI_FLAGS   = 0
 
 COMPARATOR_PIN = 24
-VREF           = 5.0
+VREF           = 1.6
 AMP_STEP       = 0.1
 
 MIN_DC_VOLT    = -5.0
