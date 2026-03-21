@@ -90,7 +90,7 @@ pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
 
 # ── Shared application state ──────────────────────────────────────────────────
 state = {
-    'menu_selection':   0,       # 0 = nothing highlighted, 1 = Ohmmeter
+    'menu_selection':   0,       # 0 = nothing highlighted, 1 = Ohmmeter, 2 = Voltmeter
     'isMainPage':       True,
     'isOhmPage':        False,
     'button_last_tick': None,
@@ -111,7 +111,7 @@ def show_main_menu():
 
 
 def run_main_menu():
-    """Block until the user selects Ohmmeter from the main menu."""
+    """Block until the user selects Ohmmeter or Voltmeter from the main menu."""
     state['isMainPage']       = True
     state['menu_selection']   = 0
     state['button_last_tick'] = None
@@ -120,7 +120,8 @@ def run_main_menu():
     show_main_menu()
 
     decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
-    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)
+    #cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)
+    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, menu_button_callback)
     state['active_callbacks'] = [decoder, cb_btn]
 
     while state['isMainPage']:
@@ -138,7 +139,7 @@ def run_ohmmeter():
     lcd.put_line(0, 'Ohmmeter')
     lcd.put_line(1, 'Measuring...')
     lcd.put_line(2, '')
-    lcd.put_line(3, 'Press btn: main menu')
+    lcd.put_line(3, 'Hold btn: main menu')
 
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, ohm_button_callback)
     state['active_callbacks'] = [cb_btn]
