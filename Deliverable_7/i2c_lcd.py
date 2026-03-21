@@ -310,6 +310,7 @@ class lcd:
 if __name__ == "__main__":
 
     import i2c_lcd
+    print(dir(i2c_lcd.lcd))
     import pigpio
     import time
     
