@@ -28,10 +28,8 @@ Menu structure:
 
 import pigpio
 import time
-import threading
 
 import i2c_lcd
-import cli_lcd
 import rotary_encoder
 from square_wave import (
     SquareWaveGenerator,
@@ -71,13 +69,7 @@ pi = pigpio.pi()
 if not pi.connected:
     raise SystemExit("Cannot connect to pigpio daemon.  Run 'sudo pigpiod' first.")
 
-try:
-    lcd      = i2c_lcd.lcd(pi, width=20)
-    CLI_MODE = False
-except Exception as e:
-    print(f"LCD unavailable ({e})\nFalling back to CLI mode.")
-    lcd      = cli_lcd.lcd(width=20)
-    CLI_MODE = True
+lcd       = i2c_lcd.lcd(pi, width=20)
 spi_dc    = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
 gen       = SquareWaveGenerator(pi, spi_dc)
 dc_ref    = DCReferenceGenerator(pi, spi_dc)
@@ -172,24 +164,6 @@ def pick_menu(title, options):
                 lcd.put_line(row + 1, '')
 
     _redraw()
-
-    if CLI_MODE:
-        print()
-        for i, opt in enumerate(options):
-            print(f"  {i + 1}. {opt}")
-        print("  b. Back")
-        while True:
-            raw = input("Choice: ").strip().lower()
-            if raw == 'b':
-                return 'Back'
-            try:
-                n = int(raw) - 1
-                if 0 <= n < len(options):
-                    return options[n]
-            except ValueError:
-                pass
-            print("Invalid choice, try again.")
-
     _attach_callbacks()
 
     while True:
@@ -227,24 +201,6 @@ def adjust_value(title, value, min_val, max_val, step, fmt):
         lcd.put_line(3, 'Btn:OK  Hold:cancel')
 
     _redraw()
-
-    if CLI_MODE:
-        print(f"  Range: {fmt(min_val)} – {fmt(max_val)},  step {step}")
-        print("  Enter a value, or press Enter to confirm, or 'c' to cancel.")
-        while True:
-            raw = input(f"  Value [{fmt(value)}]: ").strip()
-            if raw == '':
-                return value
-            if raw.lower() == 'c':
-                return None
-            try:
-                new = float(raw)
-                value = max(min_val, min(max_val, new))
-                value = round(round(value / step) * step, 10)
-                _redraw()
-            except ValueError:
-                print("  Invalid number, try again.")
-
     _attach_callbacks()
 
     while True:
@@ -336,20 +292,6 @@ def run_live_display():
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
-
-    if CLI_MODE:
-        stop = threading.Event()
-        def _refresh():
-            while not stop.is_set():
-                _redraw()
-                time.sleep(0.25)
-        t = threading.Thread(target=_refresh, daemon=True)
-        t.start()
-        input("\n  [Live output ON — press Enter to stop]\n")
-        stop.set()
-        t.join()
-        return
-
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
     state['active_callbacks'] = [cb_btn]
 
@@ -399,20 +341,6 @@ def run_dc_live_display():
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
-
-    if CLI_MODE:
-        stop = threading.Event()
-        def _refresh():
-            while not stop.is_set():
-                _redraw()
-                time.sleep(0.25)
-        t = threading.Thread(target=_refresh, daemon=True)
-        t.start()
-        input("\n  [DC output ON — press Enter to stop]\n")
-        stop.set()
-        t.join()
-        return
-
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
     state['active_callbacks'] = [cb_btn]
 
