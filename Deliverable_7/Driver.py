@@ -34,7 +34,7 @@ import rotary_encoder
 from callbacks import (
     setup_callbacks, clear_callbacks,
     menu_direction_callback, menu_button_callback,
-    ohm_button_callback,
+    ohm_button_callback, _redraw_main_menu,
     PIN_A, PIN_B, ROTARY_BTN_PIN,
 )
 from ohmmeter import (
@@ -90,7 +90,8 @@ pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
 
 # ── Shared application state ──────────────────────────────────────────────────
 state = {
-    'menu_selection':   0,       # 0 = nothing highlighted, 1 = Ohmmeter, 2 = Voltmeter
+    #'menu_selection':   0,       # 0 = nothing highlighted, 1 = Ohmmeter, 2 = Voltmeter
+    'menu_selection':    1,       # 1 = Ohmmeter, 2 = Voltmeter 
     'isMainPage':       True,
     'isOhmPage':        False,
     'button_last_tick': None,
@@ -113,11 +114,12 @@ def show_main_menu():
 def run_main_menu():
     """Block until the user selects Ohmmeter or Voltmeter from the main menu."""
     state['isMainPage']       = True
-    state['menu_selection']   = 0
+    state['menu_selection']   = 1 # was 0
     state['button_last_tick'] = None
     clear_callbacks(state)
 
     show_main_menu()
+    _redraw_main_menu()
 
     decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
     #cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)

@@ -45,7 +45,10 @@ def clear_callbacks(state):
 def menu_direction_callback(direction):
     """Rotate encoder on main menu → move the cursor between items."""
     old = _s['menu_selection']
-    _s['menu_selection'] = (old + direction) % (MENU_ITEMS + 1)
+    if old not in (1, 2):
+        old = 1
+    #_s['menu_selection'] = (old + direction) % (MENU_ITEMS + 1)
+    _s['menu_selection'] = 1 + ((old - 1 + direction) % MENU_ITEMS)
     _redraw_main_menu()
 
 
