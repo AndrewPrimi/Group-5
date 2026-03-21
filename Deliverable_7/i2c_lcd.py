@@ -156,7 +156,7 @@ class lcd:
             self._byte(0x00, 0x00)
         except Exception:
             pass'''
-'''
+"""
     def _init(self):
         """
         Initialize LCD in 4-bit mode with conservative delays.
