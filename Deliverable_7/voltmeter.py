@@ -1,15 +1,20 @@
 """
 voltmeter.py
-SAR ADC voltmeter — measures DC voltage over 0–3.3 V and displays
-the reading plus ±½-LSB tolerance on the 20×4 I2C LCD.
+SAR ADC voltmeter — measures DC voltage over ±5 V and displays
+the reading plus ±1-LSB tolerance on the 20×4 I2C LCD.
 
-Hardware (same MCP4131 SAR DAC as ohmmeter):
+Hardware:
   SPI CE1  → MCP4131 (P0A = 3.3 V, P0B = GND, P0W = DAC out)
-  LM339 compares Vin against DAC output → GPIO 23
+  Op-amp 1 buffers digipot wiper (0–3.3 V) → comparator
+  Input scaling circuit maps Vin (±5 V) → 0–3.3 V before comparator
+  LM339 compares scaled Vin against DAC output → GPIO 23
 
-Measurement range : 0–3.3 V
-Resolution        : 3.3 V / 31 = 0.1065 V per step  (5-bit SAR)
-Tolerance (±½ LSB): ±0.0532 V
+  Scaling:  Vin_scaled = (Vin + 5) * 3.3 / 10
+  Inverse:  Vin = DAC_voltage * 10 / 3.3 - 5  =  10 * step / 31 - 5
+
+Measurement range : ±5 V
+Resolution        : 10 V / 31 = 0.3226 V per step  (5-bit SAR)
+Tolerance (±1 LSB): ±0.3226 V
 
 Source menu items:
   0 – External       (measure voltage from external supply)
@@ -26,13 +31,13 @@ from callbacks import clear_callbacks, PIN_A, PIN_B, ROTARY_BTN_PIN
 import rotary_encoder
 
 # ── Voltage range ─────────────────────────────────────────────────────────────
-V_SUPPLY    =  3.3                   # MCP4131 P0A rail (V)
-V_MAX       =  V_SUPPLY
-V_MIN       =  0.0
+V_MAX       =  5.0
+V_MIN       = -5.0
+V_RANGE     = V_MAX - V_MIN          # 10 V total span
 
 _N_LEVELS   = MCP4131_MAX_STEPS      # 31 steps (0–31)
-VOLT_STEP_V = V_SUPPLY / _N_LEVELS   # ~0.1065 V per step
-VOLT_TOL_V  = VOLT_STEP_V / 2        # ±½ LSB
+VOLT_STEP_V = V_RANGE / _N_LEVELS    # ~0.3226 V per step
+VOLT_TOL_V  = VOLT_STEP_V            # ±1 LSB
 
 # ── Source menu ───────────────────────────────────────────────────────────────
 SRC_EXTERNAL  = 0
@@ -51,11 +56,11 @@ def step_to_voltage(step):
     """Convert a 5-bit SAR step (0–31) to a voltage (V).
 
     Mapping:
-        step  0 →  0.00 V
-        step 31 →  3.30 V
+        step  0 → -5.00 V
+        step 31 → +5.00 V
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    return V_SUPPLY * step / _N_LEVELS
+    return V_MIN + V_RANGE * step / _N_LEVELS
 
 
 # ── Display helpers ───────────────────────────────────────────────────────────
@@ -88,13 +93,13 @@ def build_measurement_lines(step, source_label="External"):
 
     Line 0 : 'Voltmeter'
     Line 1 : 'Src: <source_label>'
-    Line 2 : '+2.50V +/-0.0532V'
+    Line 2 : '+2.50V +/-0.3226V'
     Line 3 : 'Btn: back'
     """
     v = step_to_voltage(step)
 
     if step <= 0:
-        line2 = f"{_fmt_v(0.0)} (at min)"
+        line2 = f"{_fmt_v(V_MIN)} (at min)"
     elif step >= MCP4131_MAX_STEPS:
         line2 = f"{_fmt_v(step_to_voltage(MCP4131_MAX_STEPS))} (at max)"
     else:
