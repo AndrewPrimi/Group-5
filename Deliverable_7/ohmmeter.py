@@ -128,11 +128,13 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
         r_ref: current resistance of the R_REF digital pot (ohms)
     """
     if step <= 0:
-        return float('inf')
-    if step >= MCP4131_MAX_STEPS:
+        # return float('inf')
         return 0.0
+    if step >= MCP4131_MAX_STEPS:
+        return float('inf')
 
-    return r_ref * (MCP4131_MAX_STEPS - step) / step
+    #return r_ref * (MCP4131_MAX_STEPS - step) / step
+    return r_ref * step / (MCP4131_MAX_STEPS - step)
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
@@ -153,7 +155,7 @@ def tolerance(step, r_ref=R_REF_OHMS):
         #return 0.0
 
     r_ext = step_to_resistance(step, r_ref)
-    denom = step ** 2
+    denom = (MCP4131_MAX_STEPS - step) ** 2
     quant_tol = 0.5 * r_ref * MCP4131_MAX_STEPS / denom
     ref_tol   = r_ext * R_REF_TOLERANCE_PCT
     return math.sqrt(quant_tol ** 2 + ref_tol ** 2)
