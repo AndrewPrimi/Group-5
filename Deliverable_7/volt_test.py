@@ -16,12 +16,12 @@ from ohmmeter import (
 )
 
 # ── Formula constants (must match voltmeter.py) ───────────────────────────────
+V_MIN     = -5.0
 V_RANGE   =  10.0
-N_LEVELS  =  MCP4131_MAX_STEPS + 1   # 32
-ZERO_STEP =  2                        # step that reads 0V — update after calibration
+N_LEVELS  =  MCP4131_MAX_STEPS       # 31 → step 0 = -5V, step 31 = +5V
 
 def step_to_voltage(step):
-    return V_RANGE * (step - ZERO_STEP) / N_LEVELS
+    return V_MIN + V_RANGE * step / N_LEVELS
 
 
 def _write_dac(pi, spi, step):
