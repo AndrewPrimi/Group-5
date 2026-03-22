@@ -34,7 +34,6 @@ def main():
         settle_time=0.003,
         invert_comparator=False,
         invert_dac=True,
-        comparator_high_means_input_gt_dac=True,
     )
 
     ohms_sar = SAR_ADC(
@@ -45,7 +44,6 @@ def main():
         settle_time=0.003,
         invert_comparator=False,
         invert_dac=True,
-        comparator_high_means_input_gt_dac=True,
     )
 
     try:
@@ -63,12 +61,15 @@ def main():
                 print(f"Voltage = {voltage:.3f} V | code = {code}")
 
             elif choice == "2":
+                
                 ohms, code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=1000.0)
                 print(f"Resistance = {ohms:.3f} ohms | code = {code}")
 
             elif choice == "3":
                 voltage, v_code = read_voltmeter_value(voltage_sar)
-                ohms, code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=2000.0)
+
+                
+                ohms, o_code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=1000.0)
 
                 print(f"Voltage    = {voltage:.3f} V | code = {v_code}")
                 print(f"Resistance = {ohms:.3f} ohms | code = {o_code}")
