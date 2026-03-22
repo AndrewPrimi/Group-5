@@ -71,7 +71,7 @@ if not pi.connected:
 
 lcd       = i2c_lcd.lcd(pi, width=20)
 spi_dc    = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
-gen       = SquareWaveGenerator(pi, spi_dc)
+gen       = SquareWaveGenerator(pi, spi_dc, debug=True)
 dc_ref    = DCReferenceGenerator(pi, spi_dc)
 spi_vm    = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
 voltmeter = SAR_ADC(pi, spi_vm, COMPARATOR_PIN)
@@ -272,9 +272,10 @@ def run_amplitude_menu():
                 0.0, MAX_AMP, AMP_STEP,
                 lambda v: f"+/- {v:.1f} V",
             )
-            if new_val is not None:
-                state['amplitude'] = round(new_val, 1)
-                gen.set_amplitude(state['amplitude'])
+        if new_val is not None:
+            state['amplitude'] = round(new_val, 1)
+            gen.set_amplitude(state['amplitude'])
+            print(f"[Driver] amplitude set to {state['amplitude']:.1f} V")
         elif choice == 'Back':
             return
 
