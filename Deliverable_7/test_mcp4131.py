@@ -3,23 +3,13 @@
 import spidev
 import time
 
-# =========================
-# CONFIG (CHANGE IF NEEDED)
-# =========================
 SPI_BUS = 0
+SPI_DEVICE = 1      # GPIO7 = CE1
+SPI_SPEED = 1000000
 
-# IMPORTANT:
-# If CS → GPIO8 (CE0) → use 0
-# If CS → GPIO7 (CE1) → use 1
-SPI_DEVICE = 1  
-
-SPI_SPEED = 1000000  # 1 MHz
-
-# MCP4131 command to write wiper (pot0)
 CMD_WRITE = 0x00
 
 def write_wiper(spi, value):
-    """Set digipot wiper (0–255)."""
     value = max(0, min(255, int(value)))
     spi.xfer2([CMD_WRITE, value])
 
@@ -30,26 +20,25 @@ def main():
     spi.mode = 0
 
     print("\n=== MCP4131 TEST START ===")
-    print("Make sure:")
-    print("P0A → GND")
-    print("P0B → 3.3V")
-    print("Measure P0W → GND (VOLTS, not ohms)\n")
+    print("Wiring for this test:")
+    print("Pin 8 (VDD) -> 3.3V")
+    print("Pin 4 (VSS) -> GND")
+    print("Pin 5 (P0A) -> GND")
+    print("Pin 7 (P0B) -> 3.3V")
+    print("Pin 6 (P0W) -> multimeter red lead")
+    print("Multimeter black lead -> GND")
+    print("Measure VOLTAGE, not resistance\n")
 
     test_points = [0, 64, 128, 192, 255]
 
     try:
         for val in test_points:
             write_wiper(spi, val)
-
             expected = (val / 255.0) * 3.3
-
-            print(f"\nSet wiper = {val}")
-            print(f"Expected voltage ≈ {expected:.2f} V")
-            print("→ Measure NOW")
-
+            print(f"Set wiper = {val:3d}   Expected ≈ {expected:.3f} V")
             time.sleep(4)
 
-        print("\nNow sweeping... watch voltage change smoothly\n")
+        print("\nSweeping continuously now. Press Ctrl+C to stop.\n")
 
         while True:
             for val in range(0, 256, 5):
@@ -61,9 +50,10 @@ def main():
                 time.sleep(0.05)
 
     except KeyboardInterrupt:
-        print("\nStopping... resetting to 0")
+        print("\nStopping test...")
         write_wiper(spi, 0)
         spi.close()
+        print("Done.")
 
 if __name__ == "__main__":
     main()
