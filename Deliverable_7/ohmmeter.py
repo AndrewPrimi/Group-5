@@ -7,12 +7,14 @@ Hardware:
   Ohmmeter comparator output -> transistor buffer -> GPIO 24
 
 Observed buffered GPIO behavior:
-  low DAC step  -> GPIO reads HIGH
-  high DAC step -> GPIO reads LOW
+  low DAC step  -> about 3.1 V
+  high DAC step -> about 0 V
 
-So SAR logic here uses:
-  comp == 1 -> KEEP bit
-  comp == 0 -> DISCARD bit
+This means the GPIO logic is inverted relative to the raw comparator,
+but for the SAR search on your actual hardware, the correct rule here is:
+
+  comp == 0 -> KEEP bit
+  comp == 1 -> DISCARD bit
 """
 
 import time
@@ -57,9 +59,9 @@ def sar_measure(pi, spi_handle, comp_pin):
     """
     5-bit SAR conversion for ohmmeter.
 
-    Buffered comparator/GPIO behavior:
-      comp == 1 -> KEEP bit
-      comp == 0 -> DISCARD bit
+    On your actual hardware with the transistor buffer:
+      comp == 0 -> KEEP bit
+      comp == 1 -> DISCARD bit
     """
     step = 0
 
@@ -69,9 +71,9 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 1 else 'DISCARD'}")
+        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
 
-        if comp == 1:
+        if comp == 0:
             step = trial
 
     _write_dac(pi, spi_handle, step)
