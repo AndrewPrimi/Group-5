@@ -174,12 +174,16 @@ def build_display_lines(step):
     r = step_to_resistance(step)
     tol = tolerance(step)
 
-    if step <= 0:
-        return "Ohmmeter", "Short circuit", "", "Hold btn: main"
-
+    #if step <= 0:
+        #return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
+    #if step >= MCP4131_MAX_STEPS:
+        #return "Ohmmeter", "Open circuit", "", "Hold btn: main menu"
+    print("step is: ", step)
     if step >= MCP4131_MAX_STEPS:
-        return "Ohmmeter", "Open circuit", "", "Hold btn: main"
-
+        return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
+    if step <= 0:
+        return "Ohmmeter", "Open circuit", "", "Hold btn: main menu"
+    
     r_str = format_ohms(r)
     tol_str = format_ohms(tol)
 
