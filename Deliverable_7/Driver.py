@@ -2,11 +2,8 @@
 Driver.py – Deliverable 7
 
 Comparator mapping:
-  Voltmeter → GPIO 23
-  Ohmmeter  → GPIO 24
-
-External pull-up resistors are used (5k),
-so ALL internal pull-ups are disabled.
+  Voltmeter -> GPIO 23
+  Ohmmeter  -> GPIO 24
 """
 
 import pigpio
@@ -33,27 +30,21 @@ from voltmeter import (
     SRC_BACK, SRC_MAIN, SOURCE_LABELS,
 )
 
-# ── Comparator GPIO pins ─────────────────────────────────────────────
-COMPARATOR1_PIN = 23  # Voltmeter
-# COMPARATOR2_PIN imported from ohmmeter.py (should be 24)
+COMPARATOR1_PIN = 23
 
-# ── SPI config ───────────────────────────────────────────────────────
 DIGIPOT_SPI_CHANNEL = 0
 DIGIPOT_SPI_SPEED   = 50000
 DIGIPOT_SPI_FLAGS   = 0
 
 MEASURE_INTERVAL = 0.5
 
-# ── Init pigpio ──────────────────────────────────────────────────────
 pi = pigpio.pi()
 if not pi.connected:
     print("Run: sudo pigpiod")
     exit()
 
-# ── LCD ──────────────────────────────────────────────────────────────
 lcd = i2c_lcd.lcd(pi, width=20)
 
-# ── SPI devices ──────────────────────────────────────────────────────
 digipot_handle = pi.spi_open(
     DIGIPOT_SPI_CHANNEL,
     DIGIPOT_SPI_SPEED,
@@ -65,27 +56,21 @@ adc_handle = open_adc(pi)
 print(f"Digipot SPI handle : {digipot_handle}")
 print(f"ADC SPI handle     : {adc_handle}")
 
-# ── GPIO setup ───────────────────────────────────────────────────────
-
-# Rotary encoder
 for pin in (PIN_A, PIN_B):
     pi.set_mode(pin, pigpio.INPUT)
     pi.set_pull_up_down(pin, pigpio.PUD_UP)
 
-# Button
 pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10000)
 
-# Comparator inputs
 pi.set_mode(COMPARATOR1_PIN, pigpio.INPUT)
 pi.set_mode(COMPARATOR2_PIN, pigpio.INPUT)
 
-# 🔥 IMPORTANT: external pull-ups only (5k), so disable internal pulls
+# External pull-ups only
 pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
 pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
 
-# ── Shared state ─────────────────────────────────────────────────────
 state = {
     'menu_selection': 1,
     'isMainPage': True,
@@ -96,7 +81,6 @@ state = {
 
 setup_callbacks(state, pi, lcd)
 
-# ── UI functions ─────────────────────────────────────────────────────
 
 def show_main_menu():
     lcd.put_line(0, 'Main Menu')
@@ -168,12 +152,10 @@ def run_voltmeter():
                         source_label=SOURCE_LABELS[choice])
 
 
-# ── Display helpers ──────────────────────────────────────────────────
-
 def format_ohms(ohms):
     if ohms >= 1000:
-        return f"{ohms/1000:.2f}k"
-    return f"{ohms:.0f}"
+        return f'{ohms/1000:.2f}k'
+    return f'{ohms:.0f}'
 
 
 def build_display_lines(step):
@@ -196,8 +178,6 @@ def build_display_lines(step):
         "Hold btn: main"
     )
 
-
-# ── Main loop ────────────────────────────────────────────────────────
 
 print("Starting system...")
 
