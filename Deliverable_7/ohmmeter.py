@@ -1,22 +1,12 @@
 """
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
-
-This version rolls back to the simpler SAR behavior that was at least
-producing realistic resistor values before later comparator/output changes.
-
-Hardware assumptions:
-  - MCP4131 DAC on SPI CE1
-  - 5-bit SAR search using DAC steps 0..31
-  - Comparator output read on GPIO 24
-  - R_REF = 2k
 """
 
 import time
 import math
 import pigpio
 
-# ── Hardware constants ────────────────────────────────────────────────────────
 ADC_SPI_CHANNEL   = 1
 ADC_SPI_SPEED     = 50_000
 ADC_SPI_FLAGS     = 0
@@ -24,15 +14,10 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-# ── Circuit constants ────────────────────────────────────────────────────────
 R_REF_OHMS            = 2000
 R_REF_TOLERANCE_PCT   = 0.01
-V_SUPPLY              = 3.3
+OHMS_CAL_FACTOR       = 26.0
 
-# Keep at 1.0 for now — no extra scaling until SAR is behaving again
-OHMS_CAL_FACTOR       = 1.00
-
-# ── Measurement range for display ────────────────────────────────────────────
 R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
@@ -40,39 +25,26 @@ _SETTLE_S = 0.02
 
 
 def open_adc(pi):
-    """Open SPI handle for the MCP4131 DAC."""
     pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
     print(f"GPIO {COMPARATOR2_PIN} configured for ohmmeter comparator")
     return pi.spi_open(ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS)
 
 
 def close_adc(pi, spi_handle):
-    """Release SPI handle."""
     pi.spi_close(spi_handle)
 
 
-# ── Low-level DAC control ─────────────────────────────────────────────────────
-
 def _write_dac(pi, spi_handle, step):
-    """
-    Scale 5-bit SAR step (0..31) to MCP4131 7-bit register (0..127).
-    """
     step = max(0, min(step, MCP4131_MAX_STEPS))
     dac_code = round(step * 127 / MCP4131_MAX_STEPS)
     pi.spi_write(spi_handle, [0x00, dac_code])
 
 
-# ── SAR algorithm ─────────────────────────────────────────────────────────────
-
 def sar_measure(pi, spi_handle, comp_pin):
     """
-    Perform a 5-bit SAR conversion.
-
-    Rollback logic:
+    Current working rollback logic:
       comp == 0 -> KEEP bit
       comp == 1 -> DISCARD bit
-
-    This was the behavior closest to the earlier semi-working code.
     """
     step = 0
 
@@ -92,35 +64,22 @@ def sar_measure(pi, spi_handle, comp_pin):
 
 
 def averaged_measure(pi, spi_handle, comp_pin, n=11):
-    """Return median step from n SAR conversions."""
     readings = sorted(sar_measure(pi, spi_handle, comp_pin) for _ in range(n))
     return readings[n // 2]
 
 
-# ── Conversion maths ──────────────────────────────────────────────────────────
-
 def step_to_resistance(step, r_ref=R_REF_OHMS):
-    """
-    Convert SAR step to external resistance.
-
-    Divider model:
-        step / MAX = R_unknown / (R_ref + R_unknown)
-
-    Solve:
-        R_unknown = R_ref * step / (MAX - step)
-    """
     if step <= 0:
         return 0.0
 
     if step >= MCP4131_MAX_STEPS:
         return float('inf')
 
-    r_ext = r_ref * step / (MCP4131_MAX_STEPS - step)
-    return r_ext * OHMS_CAL_FACTOR
+    raw_r = r_ref * step / (MCP4131_MAX_STEPS - step)
+    return raw_r * OHMS_CAL_FACTOR
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    """Return approximate ±tolerance (Ω)."""
     if step <= 0 or step >= MCP4131_MAX_STEPS:
         return float('inf')
 
