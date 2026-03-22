@@ -7,36 +7,25 @@ the reading plus ±1-LSB tolerance on the 20×4 I2C LCD.
 import time
 import pigpio
 
-from ohmmeter import MCP4131_MAX_STEPS, COMPARATOR_PIN, ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS, _SETTLE_S
+from ohmmeter import MCP4131_MAX_STEPS, COMPARATOR_PIN, _SETTLE_S
 from callbacks import clear_callbacks, PIN_A, PIN_B, ROTARY_BTN_PIN
 import rotary_encoder
-
-
-# IMPORTANT:
-# Your digipot direction is reversed, so keep this True.
-INVERT_DAC = True
 
 
 # ── SAR measurement (voltmeter-specific) ─────────────────────────────────────
 
 def _write_dac(pi, spi_handle, step):
     step = max(0, min(step, MCP4131_MAX_STEPS))
-
-    if INVERT_DAC:
-        step_for_dac = MCP4131_MAX_STEPS - step
-    else:
-        step_for_dac = step
-
-    pi.spi_write(spi_handle, [0x00, round(step_for_dac * 127 / MCP4131_MAX_STEPS)])
+    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
 
 
 def _sar_measure(pi, spi_handle, comp_pin):
     """
-    5-bit SAR conversion. Returns best-match step (0–31).
+    5-bit SAR conversion.
 
-    Comparator wired:
-      comp=0 -> Vin > wiper -> DAC too small -> KEEP bit
-      comp=1 -> Vin < wiper -> DAC too large -> DISCARD bit
+    Uses the original logic that matched your real hardware better:
+      comp == 0 -> keep bit
+      comp == 1 -> discard bit
     """
     step = 0
     for bit_pos in range(4, -1, -1):
