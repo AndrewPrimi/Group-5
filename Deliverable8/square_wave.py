@@ -26,33 +26,20 @@ MAX_FREQ = 10_000
 FREQ_STEP = 10
 MAX_AMP = 10.0
 
-# Set to 1.0 if you want LCD value = actual target
-# Set to 1/3 if you want actual target = LCD/3
-DISPLAY_TO_ACTUAL_SCALE = 1.0# / 3.0
+DISPLAY_TO_ACTUAL_SCALE = 1.0
 
 MAX_WIPER = 127
 ANALOG_FULL_SCALE_VOLTS = 10.0
 
-# ---------------------------------------------------------------------------
-# IMPORTANT:
-# If amplitude is not changing, one of these directions may be backward.
-#
-# Try these combinations:
-#   POS_INCREASES_WITH_AMP = True / False
-#   NEG_DECREASES_WITH_AMP = True / False
-#
-# Current assumption:
-#   more amplitude -> W1 goes up, W0 goes down
-# ---------------------------------------------------------------------------
+# Direction tuning (adjust if needed)
 POS_INCREASES_WITH_AMP = False
 NEG_DECREASES_WITH_AMP = True
 
-# If your command bytes are swapped in hardware, flip these:
+# Command bytes (swap if needed)
 CMD_W0 = 0x00
 CMD_W1 = 0x10
-
-#CMD_W0 = 0x10
-#CMD_W1 = 0x00
+# CMD_W0 = 0x10
+# CMD_W1 = 0x00
 
 
 def _clamp(value, low, high):
@@ -66,19 +53,14 @@ def _display_amp_to_actual_amp(display_amp):
 
 
 def _actual_amp_to_steps(actual_amp):
-    """
-    Convert actual target amplitude to digipot wiper values.
-    """
     actual_amp = _clamp(float(actual_amp), 0.0, ANALOG_FULL_SCALE_VOLTS)
     t = actual_amp / ANALOG_FULL_SCALE_VOLTS
 
-    # Positive side
     if POS_INCREASES_WITH_AMP:
         w1 = round(MAX_WIPER * t)
     else:
         w1 = round(MAX_WIPER * (1.0 - t))
 
-    # Negative side
     if NEG_DECREASES_WITH_AMP:
         w0 = round(MAX_WIPER * (1.0 - t))
     else:
@@ -96,12 +78,6 @@ def _display_amp_to_steps(display_amp):
 
 class SquareWaveGenerator:
     def __init__(self, pi, spi_handle, settle_time=0.005, debug=True):
-        """
-        pi          : shared pigpio instance
-        spi_handle  : SPI handle for MCP4231 on CE0
-        settle_time : delay after each SPI write
-        debug       : print wiper values when changed
-        """
         self._pi = pi
         self._spi = spi_handle
         self._settle = settle_time
@@ -117,17 +93,12 @@ class SquareWaveGenerator:
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _write_wipers(self, w0, w1):
-        """
-        Write raw wiper values directly.
-        """
         w0 = int(_clamp(w0, 0, MAX_WIPER))
         w1 = int(_clamp(w1, 0, MAX_WIPER))
 
-        # Write W0
         self._pi.spi_write(self._spi, [CMD_W0, w0])
         time.sleep(self._settle)
 
-        # Write W1
         self._pi.spi_write(self._spi, [CMD_W1, w1])
         time.sleep(self._settle)
 
@@ -138,9 +109,6 @@ class SquareWaveGenerator:
             print(f"[SquareWave] wrote W0={w0}, W1={w1}")
 
     def _write_amplitude(self, display_amp):
-        """
-        Convert displayed amplitude to direct wiper values and write them.
-        """
         actual_amp = _display_amp_to_actual_amp(display_amp)
         w0, w1 = _display_amp_to_steps(display_amp)
 
@@ -163,16 +131,10 @@ class SquareWaveGenerator:
             print(f"[SquareWave] frequency={self._frequency} Hz")
 
     def set_amplitude(self, amplitude: float):
-        """
-        Update amplitude and immediately write both wipers.
-        """
         self._amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
         self._write_amplitude(self._amplitude)
 
     def set_raw_wipers(self, w0: int, w1: int):
-        """
-        Manual debug helper. Use this to prove hardware responds.
-        """
         if self._debug:
             print(f"[SquareWave] manual raw write W0={w0}, W1={w1}")
         self._write_wipers(w0, w1)
@@ -210,17 +172,19 @@ class SquareWaveGenerator:
     def last_w1(self):
         return self._last_w1
 
+    # ── TEST FUNCTION ─────────────────────────────────────────────────────────
+
     def test_swap_wipers(self, wait_seconds=10):
-    """
-    Standalone hardware test:
-      1) W0 = 50%, W1 = 100%
-      2) wait
-      3) swap
-      4) wait
-      5) both → 0
-    """
-        w50 = round(MAX_WIPER * 0.5)   # ~64
-        w100 = MAX_WIPER               # 127
+        """
+        Standalone hardware test:
+        1) W0 = 50%, W1 = 100%
+        2) wait
+        3) swap
+        4) wait
+        5) both → 0
+        """
+        w50 = round(MAX_WIPER * 0.5)
+        w100 = MAX_WIPER
 
         if self._debug:
             print("\n[TEST] Step 1: W0=50%, W1=100%")
@@ -239,6 +203,8 @@ class SquareWaveGenerator:
         self._write_wipers(0, 0)
 
 
+# ── Standalone runner ─────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     import pigpio
 
@@ -248,7 +214,6 @@ if __name__ == "__main__":
     if not pi.connected:
         raise SystemExit("Run 'sudo pigpiod' first.")
 
-    # SPI setup (same as Driver.py)
     spi = pi.spi_open(0, 50_000, 0)
 
     gen = SquareWaveGenerator(pi, spi, debug=True)
