@@ -5,14 +5,10 @@ Main menu -> Ohmmeter / Voltmeter pages
 
 Comparator mapping:
   Voltmeter = LM339 Comparator 1
-    pin 4 = DAC reference (-)
-    pin 5 = scaled voltmeter signal (+)
-    pin 2 = output -> GPIO 23
+    pin 2 -> GPIO 23
 
   Ohmmeter = LM339 Comparator 2
-    pin 6 = DAC reference (-)
-    pin 7 = Node A (+)
-    pin 1 = output -> GPIO 24
+    pin 1 -> GPIO 24
 """
 
 import pigpio
@@ -37,48 +33,60 @@ from ohmmeter import (
 from voltmeter import (
     run_source_menu, run_measurement,
     SRC_BACK, SRC_MAIN, SOURCE_LABELS,
-    COMPARATOR1_PIN,
 )
 
-# ── SPI for MCP4231 digipot (retained from checkpoint C) ─────────────────────
+# ── Comparator GPIO pins ─────────────────────────────────────────────
+COMPARATOR1_PIN = 23  # Voltmeter
+COMPARATOR2_PIN = 24  # Ohmmeter
+
+# ── SPI for MCP4231 digipot ──────────────────────────────────────────
 DIGIPOT_SPI_CHANNEL = 0
 DIGIPOT_SPI_SPEED   = 50_000
 DIGIPOT_SPI_FLAGS   = 0
 
 MEASURE_INTERVAL = 0.5
 
-# ── Initialise pigpio ─────────────────────────────────────────────────────────
+# ── Initialise pigpio ─────────────────────────────────────────────────
 pi = pigpio.pi()
 if not pi.connected:
     print("Cannot connect to pigpio daemon. Run 'sudo pigpiod' first.")
     exit(1)
 
-# ── Peripherals ───────────────────────────────────────────────────────────────
+# ── Peripherals ───────────────────────────────────────────────────────
 lcd = i2c_lcd.lcd(pi, width=20)
 
-digipot_handle = pi.spi_open(DIGIPOT_SPI_CHANNEL, DIGIPOT_SPI_SPEED, DIGIPOT_SPI_FLAGS)
-adc_handle     = open_adc(pi)
+digipot_handle = pi.spi_open(
+    DIGIPOT_SPI_CHANNEL,
+    DIGIPOT_SPI_SPEED,
+    DIGIPOT_SPI_FLAGS
+)
+
+adc_handle = open_adc(pi)
 
 print(f"Digipot SPI handle : {digipot_handle}")
 print(f"ADC SPI handle     : {adc_handle}")
 
-# ── GPIO setup ────────────────────────────────────────────────────────────────
+# ── GPIO setup ────────────────────────────────────────────────────────
+
+# Rotary encoder
 for pin in (PIN_A, PIN_B):
     pi.set_mode(pin, pigpio.INPUT)
     pi.set_pull_up_down(pin, pigpio.PUD_UP)
 
+# Button
 pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
-# Comparator outputs
+# 🔥 Comparator inputs (FIXED)
 pi.set_mode(COMPARATOR1_PIN, pigpio.INPUT)
-pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_UP)
-
 pi.set_mode(COMPARATOR2_PIN, pigpio.INPUT)
-pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_UP)
 
-# ── Shared application state ──────────────────────────────────────────────────
+# IMPORTANT: disable internal pull-ups (you have external 10k)
+pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
+pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
+
+# ── Shared state ──────────────────────────────────────────────────────
 state = {
     'menu_selection':    1,
     'isMainPage':        True,
@@ -89,8 +97,7 @@ state = {
 
 setup_callbacks(state, pi, lcd)
 
-
-# ── Page helpers ──────────────────────────────────────────────────────────────
+# ── UI Helpers ────────────────────────────────────────────────────────
 
 def show_main_menu():
     lcd.put_line(0, 'Main Menu')
@@ -137,6 +144,7 @@ def run_ohmmeter():
         now = time.time()
         if now - last_update >= MEASURE_INTERVAL:
             last_update = now
+
             step = averaged_measure(pi, adc_handle, COMPARATOR2_PIN, n=11)
 
             l0, l1, l2, l3 = build_display_lines(step)
@@ -144,7 +152,9 @@ def run_ohmmeter():
             lcd.put_line(1, l1)
             lcd.put_line(2, l2)
             lcd.put_line(3, l3)
+
             print(f"[Ohmmeter] step={step}  {l1.strip()}  {l2.strip()}")
+
         time.sleep(0.05)
 
     clear_callbacks(state)
@@ -155,11 +165,17 @@ def run_voltmeter():
         choice = run_source_menu(state, pi, lcd)
         if choice in (SRC_BACK, SRC_MAIN):
             break
-        run_measurement(state, pi, lcd, adc_handle,
-                        source_label=SOURCE_LABELS[choice])
+
+        run_measurement(
+            state,
+            pi,
+            lcd,
+            adc_handle,
+            source_label=SOURCE_LABELS[choice]
+        )
 
 
-# ── Display helpers ───────────────────────────────────────────────────────────
+# ── Display helpers ───────────────────────────────────────────────────
 
 def format_ohms(ohms, width=8):
     if ohms >= 1000:
@@ -197,13 +213,14 @@ def build_display_lines(step):
     return line0, line1, line2, line3
 
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
+# ── Main loop ─────────────────────────────────────────────────────────
 
 print("Starting Deliverable 7 driver...")
 
 try:
     while True:
         run_main_menu()
+
         if state['menu_selection'] == 1:
             run_ohmmeter()
         elif state['menu_selection'] == 2:
@@ -211,6 +228,7 @@ try:
 
 except KeyboardInterrupt:
     print("\nStopping...")
+
     clear_callbacks(state)
     lcd.close()
     close_adc(pi, adc_handle)
