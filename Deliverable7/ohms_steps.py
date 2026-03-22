@@ -1,50 +1,62 @@
 """
-ohms_steps.py – Constants and conversion helpers for the MCP4231 digital pot.
+ohms_steps.py
 
-The MCP4231 is a 7-bit (128-step) SPI-controlled dual potentiometer.
-This module defines the resistance range, step count, SPI bus settings,
-preset values, and two functions that convert between ohms and step values.
+Constants and conversion helpers for the MCP4231 / MCP4131 family.
+
+Important:
+- 7-bit wiper codes go from 0 to 127
+- There are 128 total positions
 """
 
-# ── Potentiometer range ──────────────────────────────────
-MINIMUM_OHMS = 100        # lowest settable resistance (ohms)
-MAXIMUM_OHMS = 10000      # full-scale resistance (ohms)
-MAX_STEPS = 128           # 7-bit wiper: 0 to 128 inclusive
-DEFAULT_OHMS = 5000       # starting resistance on page load
+# ===== Digital pot constants =====
+MINIMUM_OHMS = 0
+MAXIMUM_OHMS = 10000
 
-# ── Debounce ─────────────────────────────────────────────
-BUTTON_DEBOUNCE_US = 200000    # 200 ms – ignore button presses within this window
+NUM_POSITIONS = 128      # total positions
+MAX_CODE = 127           # valid code range: 0..127
+DEFAULT_CODE = 64
 
-# ── Constant-resistance presets ──────────────────────────
-# Four quick-select values shown on the "Constant" page.
+# ===== UI / presets =====
+DEFAULT_OHMS = 5000
 CONSTANT_OHMS = [100, 1000, 5000, 10000]
-CONSTANT_LABELS = ['100', '1k', '5k', '10k']
+CONSTANT_LABELS = ["100", "1k", "5k", "10k"]
 
-# ── SPI bus configuration for the MCP4231 ────────────────
-SPI_CHANNEL = 1       # CE1 chip-select line
-SPI_SPEED = 50000     # 50 kHz clock (well within MCP4231's 10 MHz max)
-SPI_FLAGS = 0         # default SPI mode 0,0
+# ===== SPI config =====
+# IMPORTANT:
+# If CS is on GPIO8 (CE0), use SPI_CHANNEL = 0
+# If CS is on GPIO7 (CE1), use SPI_CHANNEL = 1
+SPI_CHANNEL = 1
+SPI_SPEED = 100000
+SPI_FLAGS = 0
+
+# ===== Misc =====
+BUTTON_DEBOUNCE_US = 200000
 
 
-def ohms_to_step(ohms):
-    """Convert a desired resistance (ohms) to a wiper step (0-128).
+def clamp_code(code: int) -> int:
+    """Clamp a digipot code to the valid 0..127 range."""
+    return max(0, min(MAX_CODE, int(code)))
 
-    Clamps the input to [0, MAXIMUM_OHMS] before converting so out-of-range
-    values don't produce invalid steps.
+
+def ohms_to_code(ohms: float) -> int:
     """
-    ohms = max(0, min(ohms, MAXIMUM_OHMS))
-    step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
-    return step
-
-
-def step_to_ohms(step):
-    """Convert a wiper step (0-128) back to an approximate resistance (ohms).
-
-    This is the inverse of ohms_to_step (with minor rounding differences).
+    Convert desired ohms to digipot code.
+    Assumes approximately linear mapping across 0..10k.
     """
-    return (step / MAX_STEPS) * MAXIMUM_OHMS
+    ohms = max(MINIMUM_OHMS, min(MAXIMUM_OHMS, float(ohms)))
+    code = round((ohms / MAXIMUM_OHMS) * MAX_CODE)
+    return clamp_code(code)
 
-def fix_ohms(approx_ohms):
-    """Finetune the approximate ohms closer to the desired ohms.
+
+def code_to_ohms(code: int) -> float:
+    """Convert digipot code back to approximate ohms."""
+    code = clamp_code(code)
+    return (code / MAX_CODE) * MAXIMUM_OHMS
+
+
+def fix_ohms(approx_ohms: float) -> float:
     """
-    return (-8.05 * 10 ** -7 * approx_ohms * approx_ohms) + (0.9306 * approx_ohms) + 86.9
+    Optional empirical calibration correction.
+    Keep this only if it improves your measured results.
+    """
+    return (-8.05e-7 * approx_ohms * approx_ohms) + (0.9306 * approx_ohms) + 86.9
