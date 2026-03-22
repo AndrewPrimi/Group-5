@@ -2,8 +2,8 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-This version uses the corrected resistance formula:
-    R_unknown = R_ref * (MAX - step) / step
+This version keeps the current working SAR logic and adds
+piecewise-linear calibration for the resistance display.
 """
 
 import time
@@ -19,12 +19,22 @@ MCP4131_MAX_STEPS = 31
 
 R_REF_OHMS            = 2000
 R_REF_TOLERANCE_PCT   = 0.01
-OHMS_CAL_FACTOR       = 1.00
 
 R_MIN_OHMS = 100
 R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
+
+# -------------------------------------------------------------------
+# Calibration points
+# Format: (raw_measured_ohms, actual_ohms)
+# Add more points later if needed.
+# -------------------------------------------------------------------
+CAL_POINTS = [
+    (214.0,   220.0),
+    (5750.0,  5000.0),
+    (10400.0, 10000.0),
+]
 
 
 def open_adc(pi):
@@ -45,7 +55,7 @@ def _write_dac(pi, spi_handle, step):
 
 def sar_measure(pi, spi_handle, comp_pin):
     """
-    Current working rollback logic:
+    Current working SAR logic:
       comp == 0 -> KEEP bit
       comp == 1 -> DISCARD bit
     """
@@ -71,12 +81,37 @@ def averaged_measure(pi, spi_handle, comp_pin, n=11):
     return readings[n // 2]
 
 
-def step_to_resistance(step, r_ref=R_REF_OHMS):
-    """
-    Corrected formula:
-        step / MAX = R_ref / (R_ref + R_unknown)
+def _interp(x, x0, y0, x1, y1):
+    """Linear interpolation."""
+    if x1 == x0:
+        return y0
+    return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
-    So:
+
+def calibrate_resistance(raw_ohms):
+    """
+    Convert raw computed resistance to calibrated resistance using
+    piecewise-linear interpolation through CAL_POINTS.
+    """
+    pts = CAL_POINTS
+
+    if raw_ohms <= pts[0][0]:
+        # Scale below first point from 0 -> first point
+        return _interp(raw_ohms, 0.0, 0.0, pts[0][0], pts[0][1])
+
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x0 <= raw_ohms <= x1:
+            return _interp(raw_ohms, x0, y0, x1, y1)
+
+    # Above last point: extend using last segment slope
+    x0, y0 = pts[-2]
+    x1, y1 = pts[-1]
+    return _interp(raw_ohms, x0, y0, x1, y1)
+
+
+def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
+    """
+    Raw divider formula:
         R_unknown = R_ref * (MAX - step) / step
     """
     if step <= 0:
@@ -85,15 +120,26 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
     if step >= MCP4131_MAX_STEPS:
         return 0.0
 
-    raw_r = r_ref * (MCP4131_MAX_STEPS - step) / step
-    return raw_r * OHMS_CAL_FACTOR
+    return r_ref * (MCP4131_MAX_STEPS - step) / step
+
+
+def step_to_resistance(step, r_ref=R_REF_OHMS):
+    raw_r = step_to_raw_resistance(step, r_ref)
+
+    if raw_r == float('inf'):
+        return float('inf')
+
+    return calibrate_resistance(raw_r)
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
+    """
+    Practical display tolerance.
+    """
     if step <= 0 or step >= MCP4131_MAX_STEPS:
         return float('inf')
 
     r_ext = step_to_resistance(step, r_ref)
 
-    # Practical tolerance estimate
-    return max(0.05 * r_ext, 10.0)
+    # Aim for a practical visible tolerance estimate
+    return max(50.0, 0.02 * r_ext)
