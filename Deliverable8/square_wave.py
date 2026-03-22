@@ -48,11 +48,11 @@ POS_INCREASES_WITH_AMP = True
 NEG_DECREASES_WITH_AMP = False
 
 # If your command bytes are swapped in hardware, flip these:
-CMD_W0 = 0x00
-CMD_W1 = 0x10
-
-#CMD_W0 = 0x00 try this next
+#CMD_W0 = 0x00
 #CMD_W1 = 0x10
+
+CMD_W0 = 0x10
+CMD_W1 = 0x00
 
 
 def _clamp(value, low, high):
