@@ -145,12 +145,70 @@ CAL_TABLE = {
     9250.6: 10000,
 }
 
+'''
+def ohms_to_step(ohms):
+    """Convert a desired resistance (ohms) to a wiper step (0-128).
+
+    Clamps the input to [0, MAXIMUM_OHMS] before converting so out-of-range
+    values don't produce invalid steps.
+    """
+    
+    step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
+    return step
+'''
+
+def ohms_to_step(ohms):
+    """Convert desired resistance to best step using calibration."""
+
+    # Clamp input
+    ohms = max(MINIMUM_OHMS, min(MAXIMUM_OHMS, ohms))
+
+    # Find closest available calibrated point
+    closest = min(listOfOhms.keys(), key=lambda k: abs(k - ohms))
+
+    # Convert that to step
+    step = int((closest / MAXIMUM_OHMS) * MAX_STEPS)
+
+    return step
+
+'''
+def step_to_ohms(step):
+    """Convert a wiper step (0-128) back to an approximate resistance (ohms).
+
+    This is the inverse of ohms_to_step (with minor rounding differences).
+    """
+    #raw_ohms = int((step / MAX_STEPS) * MAXIMUM_OHMS)
+    #closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
+    #return listOfOhms[closest_key]
+    return 0
+'''
+
+
+def step_to_ohms(step):
+    """Convert step to approximate ohms using calibration."""
+
+    # Convert step → ideal ohms
+    ideal = (step / MAX_STEPS) * MAXIMUM_OHMS
+
+    # Snap to nearest calibrated value
+    closest = min(listOfOhms.keys(), key=lambda k: abs(k - ideal))
+
+    return closest
+
+if __name__ == "__main__":
+    ohms = 9100
+    x = ohms_to_step(ohms)
+    print("Step: ", x)
+    y = step_to_ohms(x)
+    print("Back to Ohms: ", y)
+
+
 # ------------------------------------------------------------------
 # Precompute sorted lists for interpolation
 # ------------------------------------------------------------------
 
 # Sorted by ACTUAL desired ohms
-_DESIRED_TO_CORRECTED = sorted((actual, corrected) for corrected, actual in CAL_TABLE.items())
+"""_DESIRED_TO_CORRECTED = sorted((actual, corrected) for corrected, actual in CAL_TABLE.items())
 DESIRED_VALUES = [pair[0] for pair in _DESIRED_TO_CORRECTED]
 CORRECTED_FOR_DESIRED = [pair[1] for pair in _DESIRED_TO_CORRECTED]
 
@@ -273,7 +331,7 @@ if __name__ == "__main__":
             f"corrected={corrected:8.2f}  "
             f"step={step:3d}  "
             f"estimated_actual={back:8.2f}"
-        )
+        )"""
 
     # If you want a dense 10-ohm table:
     # dense = generate_dense_lookup()
