@@ -201,31 +201,4 @@ class SquareWaveGenerator:
         if self._debug:
             print("\n[TEST] Step 3: W0=0%, W1=0% (reset)")
         self._write_wipers(0, 0)
-
-
-# ── Standalone runner ─────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import pigpio
-
-    print("Running square_wave.py standalone test...")
-
-    pi = pigpio.pi()
-    if not pi.connected:
-        raise SystemExit("Run 'sudo pigpiod' first.")
-
-    spi = pi.spi_open(0, 50_000, 0)
-
-    gen = SquareWaveGenerator(pi, spi, debug=True)
-
-    try:
-        gen.test_swap_wipers(wait_seconds=10)
-
-    except KeyboardInterrupt:
-        print("\nTest interrupted.")
-
-    finally:
-        print("Cleaning up...")
-        gen.cleanup()
-        pi.spi_close(spi)
-        pi.stop()
+)
