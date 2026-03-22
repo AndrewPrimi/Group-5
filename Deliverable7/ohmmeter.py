@@ -1,5 +1,6 @@
 """
 ohmmeter.py
+Wrapper helpers for ohmmeter operation.
 """
 
 from sar_logic import SAR_ADC
@@ -11,4 +12,4 @@ R_KNOWN = 1000.0
 def read_ohmmeter_value(sar: SAR_ADC,
                         vref: float = OHMMETER_VREF,
                         r_known: float = R_KNOWN):
-    return sar.read_ohms(vref, r_known)
+    return sar.read_ohms(vref, r_known))
