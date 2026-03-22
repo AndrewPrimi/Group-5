@@ -1,120 +1,197 @@
 """
-sar_logic.py – Performs successive-approximation (SAR) logic.
+sar_logic.py
 
-This module estimates the value of Vin to the LM339 quad comparator.
+Successive-approximation logic for:
+- voltmeter mode
+- ohmmeter mode
 
-SAR performs binary search over the step values until it reaches
-the step closest to the actual Vin. 
+This version is written for:
+- pigpio SPI
+- 7-bit MCP4231 / MCP4131 style DAC reference
+- one comparator GPIO input
 
+Assumptions:
+- comparator output is digital
+- DAC/reference range is 0..Vref
+- for bipolar voltmeter mode, your analog front-end scales the input
+  into 0..Vref, and we map it back afterward
 """
 
 import time
 import pigpio
-from ohms_steps import MAX_STEPS, step_to_ohms
 
-MAX_VOLTAGE = 6
-MIN_VOLTAGE = -6
+from ohms_steps import MAX_CODE, clamp_code, fix_ohms
+
 
 class SAR_ADC:
-    def __init__(self, pi, spi_handle, comparator_pin,
-                 selected_pot=0, settle_time=0.001,
-                 invert_comparator=False):
+    def __init__(
+        self,
+        pi,
+        spi_handle,
+        comparator_pin,
+        selected_pot=0,
+        settle_time=0.003,
+        invert_comparator=False,
+        invert_dac=True,
+        comparator_high_means_input_gt_dac=True,
+    ):
         """
-        pi                 : pigpio instance
-        spi_handle         : SPI handle
-        comparator_pin     : GPIO connected to comparator
-        selected_pot       : 0 or 1 (MCP4231 wiper)
-        settle_time        : DAC settling delay (seconds)
-        invert_comparator  : True if comparator logic reversed
+        pi: pigpio.pi() instance
+        spi_handle: handle returned by pi.spi_open(...)
+        comparator_pin: GPIO connected to comparator output
+        selected_pot: 0 or 1 for MCP4231 dual pot
+        settle_time: seconds to wait after each DAC update
+        invert_comparator: flips comparator input logic if needed
+        invert_dac: flips DAC direction if code 0 currently gives high voltage
+        comparator_high_means_input_gt_dac:
+            True  -> comparator HIGH means Vin > Vdac
+            False -> comparator HIGH means Vin <= Vdac
         """
         self.pi = pi
         self.spi_handle = spi_handle
         self.compare_pin = comparator_pin
         self.selected_pot = selected_pot
         self.settle_time = settle_time
-        self.invert = invert_comparator
+        self.invert_comparator = invert_comparator
+        self.invert_dac = invert_dac
+        self.comparator_high_means_input_gt_dac = comparator_high_means_input_gt_dac
 
-        self.pi.set_mode(self.compare_pin, 0)  # input
+        self.pi.set_mode(self.compare_pin, pigpio.INPUT)
 
-    # ── Write step value ─────────────────────────────────────────────
+    # =========================================================
+    # Low-level DAC / comparator helpers
+    # =========================================================
 
-    def _write_step(self, step):
-        step = max(0, min(MAX_STEPS - 1, step))
-        #cmd = 0x00 if self.selected_pot == 0 else 0x10
-        cmd = 0x00
-        self.pi.spi_write(self.spi_handle, [cmd, step])
+    def _build_command_byte(self) -> int:
+        """
+        MCP4231 volatile wiper write:
+        pot 0 -> 0x00
+        pot 1 -> 0x10
+        """
+        return 0x00 if self.selected_pot == 0 else 0x10
+
+    def _write_code(self, code: int) -> None:
+        """
+        Write 0..127 to selected digital pot.
+        """
+        code = clamp_code(code)
+
+        if self.invert_dac:
+            actual_code = MAX_CODE - code
+        else:
+            actual_code = code
+
+        cmd = self._build_command_byte()
+        self.pi.spi_write(self.spi_handle, bytes([cmd, actual_code]))
         time.sleep(self.settle_time)
 
-    # ── Read step value in binary search ─────────────────────────────
-
-    def read_step(self):
+    def _read_comparator(self) -> int:
         """
-        Perform SAR search in step space.
-        Returns the best step value.
+        Read comparator GPIO and optionally invert its logic.
         """
-        low = 0
-        high = MAX_STEPS
-        
-        # Binary search algorithm
-        while low <= high:
-            mid = (low + high) // 2
-
-            self._write_step(mid)
-            time.sleep(self.settle_time)
-
-            comp = self.pi.read(self.compare_pin)
-
-            if self.invert:
-                comp = 1 - comp
-
-            # Assume Vdac > Vin, else Vdac <= Vin
-            if comp == 1:
-                high = mid - 1
-            else:
-                low = mid + 1
-
-        return high        
-        
-    # ── Read comparator ──────────────────── 
-    
-    def _read_comparator(self):
         val = self.pi.read(self.compare_pin)
-        
-        if self.invert:
+        if self.invert_comparator:
             val ^= 1
-            
         return val
 
-    
-    # ── Voltmeter: Return Vin approximation or MAX_VOLTAGE  ────────────────────
+    # =========================================================
+    # SAR core
+    # =========================================================
 
-    def read_voltage(self, Vref):
+    def read_code(self) -> int:
         """
-        Perform SAR and return estimated Vin voltage.
+        Perform a 7-bit SAR conversion.
+        Returns best code in 0..127.
         """
-        step = self.read_step()
-        # voltage is a fraction of Vref
-        voltage = -Vref + (2 * Vref) * (step / MAX_STEPS)
+        code = 0
 
-        # voltage must be within the range [-6, 6] 
-        if voltage > MAX_VOLTAGE:
-            return MAX_VOLTAGE, step
-        elif voltage < MIN_VOLTAGE:
-            return MIN_VOLTAGE, step
-        
-        return voltage, step
-    
-    # ── Ohmmeter: Return resistance approximation ──────────────────────────────
+        for bit in range(6, -1, -1):
+            trial = code | (1 << bit)
+            self._write_code(trial)
 
-    def read_ohms(self, Vref, R_known):
-        """
-        Perform SAR and return estimated R_unknown resistance.
-        """
-        Vin, step = self.read_voltage(Vref)
+            comp = self._read_comparator()
 
-        if Vin <= 0 or Vin >= Vref:
-            return None, step
-        # The R_unknown R_known voltage divider formula
-        R_unknown = R_known * Vin / (Vref - Vin)
-        #R_unknown = 10000 - R_unknown
-        return R_unknown, step
+            # If comparator HIGH means Vin > Vdac:
+            # keep the bit when comparator is HIGH
+            if self.comparator_high_means_input_gt_dac:
+                if comp == 1:
+                    code = trial
+            else:
+                # keep the bit when comparator is LOW
+                if comp == 0:
+                    code = trial
+
+        return clamp_code(code)
+
+    # =========================================================
+    # Conversion helpers
+    # =========================================================
+
+    @staticmethod
+    def code_to_voltage_unipolar(code: int, vref: float) -> float:
+        """
+        Map code 0..127 to 0..Vref
+        """
+        code = clamp_code(code)
+        return (code / MAX_CODE) * vref
+
+    @staticmethod
+    def code_to_voltage_bipolar(code: int, full_scale_voltage: float) -> float:
+        """
+        Map code 0..127 to -full_scale_voltage .. +full_scale_voltage
+        Example:
+            full_scale_voltage = 6
+            output range = -6V .. +6V
+        """
+        code = clamp_code(code)
+        return -full_scale_voltage + (2.0 * full_scale_voltage * code / MAX_CODE)
+
+    # =========================================================
+    # Public measurement methods
+    # =========================================================
+
+    def read_voltage_unipolar(self, vref: float = 3.3):
+        """
+        Read a 0..Vref signal.
+        Returns (voltage, code)
+        """
+        code = self.read_code()
+        voltage = self.code_to_voltage_unipolar(code, vref)
+        return voltage, code
+
+    def read_voltage_bipolar(self, full_scale_voltage: float = 6.0):
+        """
+        Read a signal that your analog front-end has scaled such that:
+        code 0   -> -full_scale_voltage
+        code 127 -> +full_scale_voltage
+
+        Returns (voltage, code)
+        """
+        code = self.read_code()
+        voltage = self.code_to_voltage_bipolar(code, full_scale_voltage)
+        return voltage, code
+
+    def read_ohms(self, vref: float, r_known: float, apply_calibration: bool = False):
+        """
+        Use voltage divider formula:
+            Vout = Vref * R_unknown / (R_known + R_unknown)
+
+        Solve for R_unknown:
+            R_unknown = R_known * Vout / (Vref - Vout)
+
+        Returns (resistance_ohms, code)
+        """
+        vout, code = self.read_voltage_unipolar(vref)
+
+        if vout <= 0:
+            return 0.0, code
+
+        if vout >= vref:
+            return float("inf"), code
+
+        r_unknown = r_known * vout / (vref - vout)
+
+        if apply_calibration:
+            r_unknown = fix_ohms(r_unknown)
+
+        return r_unknown, code
