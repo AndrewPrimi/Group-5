@@ -145,7 +145,7 @@ CAL_TABLE = {
     9250.6: 10000,
 }
 
-'''
+
 def ohms_to_step(ohms):
     """Convert a desired resistance (ohms) to a wiper step (0-128).
 
@@ -155,10 +155,10 @@ def ohms_to_step(ohms):
     
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
-'''
 
-def ohms_to_step(ohms):
-    """Convert desired resistance to best step using calibration."""
+
+"""def ohms_to_step(ohms):
+    '''Convert desired resistance to best step using calibration.'''
 
     # Clamp input
     ohms = max(MINIMUM_OHMS, min(MAXIMUM_OHMS, ohms))
@@ -171,19 +171,19 @@ def ohms_to_step(ohms):
 
     return step
 
-'''
+"""
 def step_to_ohms(step):
-    """Convert a wiper step (0-128) back to an approximate resistance (ohms).
+    '''Convert a wiper step (0-128) back to an approximate resistance (ohms).
 
     This is the inverse of ohms_to_step (with minor rounding differences).
-    """
+    '''
     #raw_ohms = int((step / MAX_STEPS) * MAXIMUM_OHMS)
     #closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
     #return listOfOhms[closest_key]
     return 0
+
+
 '''
-
-
 def step_to_ohms(step):
     """Convert step to approximate ohms using calibration."""
 
