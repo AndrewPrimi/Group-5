@@ -230,10 +230,10 @@ def _interp(x, x0, y0, x1, y1):
 
 
 def _interp_from_sorted_lists(x, xs, ys):
-    """
+
     Interpolate y from monotonic sorted xs and matching ys.
     Clamps outside the range.
-    """
+
     if x <= xs[0]:
         return ys[0]
     if x >= xs[-1]:
@@ -252,64 +252,64 @@ def _interp_from_sorted_lists(x, xs, ys):
 # ------------------------------------------------------------------
 
 def desired_ohms_to_corrected_ohms(desired_ohms):
-    """
+
     Convert desired actual ohms -> corrected/internal ohms using interpolation.
 
     Example:
         desired 5000 -> about 4679
         desired 5010 -> interpolated between 5000 and 5100 points
-    """
+
     desired_ohms = _clamp(float(desired_ohms), MINIMUM_OHMS, MAXIMUM_OHMS)
     return _interp_from_sorted_lists(desired_ohms, DESIRED_VALUES, CORRECTED_FOR_DESIRED)
 
 
 def corrected_ohms_to_desired_ohms(corrected_ohms):
-    """
+
     Convert corrected/internal ohms -> estimated actual ohms using interpolation.
     Useful for converting a step back to displayed ohms.
-    """
+
     corrected_ohms = _clamp(float(corrected_ohms), CORRECTED_VALUES[0], CORRECTED_VALUES[-1])
     return _interp_from_sorted_lists(corrected_ohms, CORRECTED_VALUES, DESIRED_FOR_CORRECTED)
 
 
 def ohms_to_step(desired_ohms):
-    """
+
     Convert desired actual ohms to digipot step/code.
 
     Flow:
         desired actual ohms
           -> corrected/internal ohms via interpolation
           -> digipot code 0..127
-    """
+
     corrected_ohms = desired_ohms_to_corrected_ohms(desired_ohms)
     code = round((corrected_ohms / MAXIMUM_OHMS) * MAX_CODE)
     return int(_clamp(code, 0, MAX_CODE))
 
 
 def step_to_corrected_ohms(step):
-    """
+
     Convert digipot step/code -> corrected/internal ohms.
-    """
+
     step = int(_clamp(step, 0, MAX_CODE))
     return (step / MAX_CODE) * MAXIMUM_OHMS
 
 
 def step_to_ohms(step):
-    """
+
     Convert digipot step/code -> estimated actual ohms using interpolation.
-    """
+
     corrected_ohms = step_to_corrected_ohms(step)
     return corrected_ohms_to_desired_ohms(corrected_ohms)
 
 
 def generate_dense_lookup(start=100, stop=10000, increment=10):
-    """
+
     Generate a dense lookup table:
         desired ohms -> corrected/internal ohms
 
     Example output entry:
         5010 : 4686.05
-    """
+
     table = {}
     for desired in range(start, stop + 1, increment):
         table[desired] = desired_ohms_to_corrected_ohms(desired)
