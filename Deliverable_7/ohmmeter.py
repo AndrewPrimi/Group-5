@@ -91,7 +91,7 @@ def sar_measure(pi, spi_handle, comp_pin):
         comp = pi.read(comp_pin)
         print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 1 else 'DISCARD'}")
 
-        if comp == 1:
+        if comp == 0:
             step = trial
 
     _write_dac(pi, spi_handle, step)
