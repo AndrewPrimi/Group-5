@@ -39,7 +39,7 @@ from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
 
 # ── GPIO pin assignments ──────────────────────────────────────────────────────
-PIN_A          = 22 
+PIN_A          = 22
 PIN_B          = 27
 ROTARY_BTN_PIN = 17
 
@@ -272,10 +272,10 @@ def run_amplitude_menu():
                 0.0, MAX_AMP, AMP_STEP,
                 lambda v: f"+/- {v:.1f} V",
             )
-        if new_val is not None:
-            state['amplitude'] = round(new_val, 1)
-            gen.set_amplitude(state['amplitude'])
-            print(f"[Driver] amplitude set to {state['amplitude']:.1f} V")
+            if new_val is not None:
+                state['amplitude'] = round(new_val, 1)
+                gen.set_amplitude(state['amplitude'])
+                print(f"[Driver] amplitude set to {state['amplitude']:.1f} V")
         elif choice == 'Back':
             return
 
@@ -392,7 +392,6 @@ def run_dc_output_menu():
             dc_ref.start()
             state['dc_output_on'] = True
             run_dc_live_display()
-            # returning from live display (hold) turns output off
             dc_ref.stop()
             state['dc_output_on'] = False
         elif choice == 'Off':
