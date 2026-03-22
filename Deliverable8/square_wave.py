@@ -1,127 +1,207 @@
 """
 square_wave.py – Square wave generator via hardware PWM + MCP4231 amplitude.
 
-Frequency
+PWM output
+----------
+hardware PWM comes from GPIO 13 at 50% duty cycle.
+
+Amplitude control
+-----------------
+The MCP4231 dual digital pot is used by controlling the resistance
+between terminal B and the wiper for each pot.
+
+Assumed behavior:
+  - W1 controls the positive side
+  - W0 controls the negative side
+  - higher displayed amplitude should increase W1 and decrease W0
+
+If your hardware responds backward on one side, swap the mapping for that side.
+
+IMPORTANT
 ---------
-Driven entirely by pigpio hardware_PWM on GPIO 13 at a fixed 50% duty cycle.
-Changing frequency just changes the FREQ argument — no manual signal toggling.
+DISPLAY_TO_ACTUAL_SCALE controls the relationship between what the LCD shows
+and what you want the hardware to target.
 
-  pi.hardware_PWM(GPIO=13, FREQ=<user frequency>, DUTY=500000)
-
-Amplitude
----------
-The MCP4231 dual digital pot (SPI CE0) feeds a summing amplifier:
-  W1 (command 0x10) → positive op-amp circuit  → sets +swing
-  W0 (command 0x00) → negative op-amp circuit  → sets -swing
-
-IMPORTANT:
-  The actual hardware output is intentionally scaled to 1/3 of the value
-  shown on the LCD / selected by the user.
-
-  Example:
-    LCD says 9.0 V  -> actual output target is 3.0 V
-    LCD says 6.0 V  -> actual output target is 2.0 V
-    LCD says 3.0 V  -> actual output target is 1.0 V
-
-Calibration endpoints (for actual hardware output):
-  Amplitude  |  W0 step  |  W1 step
-  -----------+-----------+---------
-    0.0 V    |    127    |     0
-   10.0 V    |      0    |   127
-
-So the code first scales:
-  actual_amp = displayed_amp / 3
-
-Then maps actual_amp into digipot steps.
+Examples:
+  DISPLAY_TO_ACTUAL_SCALE = 1.0   -> LCD 9.0 means target 9.0
+  DISPLAY_TO_ACTUAL_SCALE = 1/3   -> LCD 9.0 means target 3.0
 """
 
 import time
 
 # ── Hardware constants ────────────────────────────────────────────────────────
-PWM_GPIO  = 13
-DUTY      = 500_000     # 50 % duty cycle (pigpio: 0 – 1_000_000)
+PWM_GPIO = 13
+DUTY = 500_000   # 50% duty cycle (pigpio range: 0 to 1_000_000)
 
-# ── User-facing range constants (imported by Driver.py) ──────────────────────
-MIN_FREQ  = 100         # Hz
-MAX_FREQ  = 10_000      # Hz
-FREQ_STEP = 10          # Hz per encoder click
-MAX_AMP   = 10.0        # V shown on LCD / user-facing max
+# ── User-facing constants ─────────────────────────────────────────────────────
+MIN_FREQ = 100
+MAX_FREQ = 10_000
+FREQ_STEP = 10
+
+# This is the value the UI / LCD shows
+MAX_AMP = 10.0
+
+# Change this if you want actual output to be some fraction of the LCD value
+DISPLAY_TO_ACTUAL_SCALE = 1.0 / 3.0
+
+# MCP4231 is a 7-bit dual pot
+MAX_WIPER = 127
+
+# If the hardware gives full desired swing when the actual target is 10 V,
+# keep this at 10.0. If your analog stage is calibrated to some other full
+# scale, change this.
+ANALOG_FULL_SCALE_VOLTS = 10.0
 
 
-def _amp_to_steps(amplitude):
+def _clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+def _display_amp_to_actual_amp(display_amp):
     """
-    Map displayed amplitude (0 – 10 V) to (W0_step, W1_step).
-
-    The actual hardware output is intentionally 1/3 of the displayed value.
-    W0 → negative op-amp, W1 → positive op-amp.
+    Convert the LCD/display amplitude to the actual target amplitude.
     """
-    # Clamp user-selected/displayed amplitude
-    amplitude = max(0.0, min(MAX_AMP, amplitude))
+    display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
+    actual_amp = display_amp * DISPLAY_TO_ACTUAL_SCALE
+    return _clamp(actual_amp, 0.0, ANALOG_FULL_SCALE_VOLTS)
 
-    # Scale actual output to 1/3 of displayed value
-    actual_amp = amplitude / 3.0
 
-    # Clamp actual amplitude to valid calibration range
-    actual_amp = max(0.0, min(MAX_AMP, actual_amp))
+def _actual_amp_to_steps(actual_amp):
+    """
+    Convert actual target amplitude into direct MCP4231 wiper codes,
+    based on controlling B-to-wiper resistance.
 
-    t  = actual_amp / MAX_AMP
-    w0 = round(127 - 127 * t)   # negative circuit decreases as amplitude rises
-    w1 = round(127 * t)         # positive circuit increases as amplitude rises
+    Assumed endpoint behavior:
+      actual_amp = 0 V   -> W0 = 127, W1 = 0
+      actual_amp = 10 V  -> W0 = 0,   W1 = 127
 
+    That means:
+      W1 rises with amplitude
+      W0 falls with amplitude
+    """
+    actual_amp = _clamp(float(actual_amp), 0.0, ANALOG_FULL_SCALE_VOLTS)
+    t = actual_amp / ANALOG_FULL_SCALE_VOLTS
+
+    w1 = round(MAX_WIPER * t)
+    w0 = round(MAX_WIPER * (1.0 - t))
+
+    w0 = int(_clamp(w0, 0, MAX_WIPER))
+    w1 = int(_clamp(w1, 0, MAX_WIPER))
     return w0, w1
+
+
+def _display_amp_to_steps(display_amp):
+    """
+    Full conversion:
+      displayed amplitude -> actual target amplitude -> direct wiper codes
+    """
+    actual_amp = _display_amp_to_actual_amp(display_amp)
+    return _actual_amp_to_steps(actual_amp)
 
 
 class SquareWaveGenerator:
     def __init__(self, pi, spi_handle, settle_time=0.001):
         """
         pi          : shared pigpio instance
-        spi_handle  : SPI handle for amplitude MCP4231 (CE0, shared with DC ref)
-        settle_time : delay after each SPI write for wiper to settle
+        spi_handle  : SPI handle for MCP4231 on CE0
+        settle_time : delay after each SPI write
         """
-        self._pi        = pi
-        self._spi       = spi_handle
-        self._settle    = settle_time
+        self._pi = pi
+        self._spi = spi_handle
+        self._settle = settle_time
+
         self._frequency = MIN_FREQ
         self._amplitude = 0.0
-        self._running   = False
+        self._running = False
 
-        # hardware_PWM sets GPIO 13 to ALT0 automatically — no set_mode needed
+        self._last_w0 = None
+        self._last_w1 = None
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _write_amplitude(self, amplitude):
-        """Write W0 (negative) and W1 (positive) wipers for the given amplitude."""
-        w0, w1 = _amp_to_steps(amplitude)
-        self._pi.spi_write(self._spi, [0x00, w0])  # W0 – negative op-amp
+    def _write_wipers(self, w0, w1):
+        """
+        Write raw wiper values directly.
+        W0 command = 0x00
+        W1 command = 0x10
+        """
+        w0 = int(_clamp(w0, 0, MAX_WIPER))
+        w1 = int(_clamp(w1, 0, MAX_WIPER))
+
+        self._pi.spi_write(self._spi, [0x00, w0])   # W0
         time.sleep(self._settle)
-        self._pi.spi_write(self._spi, [0x10, w1])  # W1 – positive op-amp
+        self._pi.spi_write(self._spi, [0x10, w1])   # W1
         time.sleep(self._settle)
+
+        self._last_w0 = w0
+        self._last_w1 = w1
+
+    def _write_amplitude(self, display_amp):
+        """
+        Convert displayed amplitude to direct wiper values and write them.
+        """
+        w0, w1 = _display_amp_to_steps(display_amp)
+        self._write_wipers(w0, w1)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def set_frequency(self, frequency: int):
-        """Update frequency. Applied immediately via hardware_PWM if running."""
-        self._frequency = max(MIN_FREQ, min(MAX_FREQ, int(frequency)))
+        """
+        Update frequency. Applied immediately if running.
+        """
+        self._frequency = int(_clamp(int(frequency), MIN_FREQ, MAX_FREQ))
         if self._running:
             self._pi.hardware_PWM(PWM_GPIO, self._frequency, DUTY)
 
     def set_amplitude(self, amplitude: float):
-        """Update displayed amplitude. Actual hardware output is 1/3 of this value."""
-        self._amplitude = max(0.0, min(MAX_AMP, amplitude))
-        if self._running:
-            self._write_amplitude(self._amplitude)
+        """
+        Update displayed amplitude and immediately write the wipers.
+
+        This writes even if PWM is not running, so you can verify the analog
+        stage changes while debugging.
+        """
+        self._amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
+        self._write_amplitude(self._amplitude)
+
+    def set_raw_wipers(self, w0: int, w1: int):
+        """
+        Manual debug helper: directly set W0 and W1.
+        """
+        self._write_wipers(w0, w1)
 
     def start(self):
-        """Set amplitude wipers then start hardware PWM at the stored frequency."""
+        """
+        Apply amplitude then start hardware PWM.
+        """
         self._running = True
         self._write_amplitude(self._amplitude)
         self._pi.hardware_PWM(PWM_GPIO, self._frequency, DUTY)
 
     def stop(self):
-        """Stop hardware PWM and zero amplitude wipers."""
+        """
+        Stop PWM and zero the amplitude.
+        """
         self._running = False
         self._pi.hardware_PWM(PWM_GPIO, 0, 0)
         self._write_amplitude(0.0)
 
     def cleanup(self):
         self.stop()
+
+    # ── Optional debug accessors ──────────────────────────────────────────────
+
+    @property
+    def frequency(self):
+        return self._frequency
+
+    @property
+    def amplitude(self):
+        return self._amplitude
+
+    @property
+    def last_w0(self):
+        return self._last_w0
+
+    @property
+    def last_w1(self):
+        return self._last_w1
