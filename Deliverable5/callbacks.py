@@ -238,7 +238,8 @@ def _set_digipot_step(step_value):
     """
     from ohms_steps import MAX_STEPS
     if 0 <= step_value <= MAX_STEPS:
-        cmd = 0x00 if _s['selected_pot'] == 0 else 0x10 # choosing which digi pot to use
+        #cmd = 0x00 if _s['selected_pot'] == 0 else 0x10 # choosing which digi pot to use
+        cmd = 0x11 if _s['selected_pot'] == 0 else 0x12 # choosing which digi pot to use
         _pi.spi_write(_s['spi_handle'], [cmd, step_value])
         approx_ohms = step_to_ohms(step_value)
         
