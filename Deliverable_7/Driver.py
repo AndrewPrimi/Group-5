@@ -1,14 +1,8 @@
 """
 Driver.py – Deliverable 7
 
-Main menu -> Ohmmeter / Voltmeter pages
-
-Comparator mapping:
-  Voltmeter = LM339 Comparator 1
-    pin 2 -> GPIO 23
-
-  Ohmmeter = LM339 Comparator 2
-    pin 1 -> GPIO 24
+Voltmeter comparator output -> GPIO 23
+Ohmmeter comparator output  -> GPIO 25
 """
 
 import pigpio
@@ -35,24 +29,20 @@ from voltmeter import (
     SRC_BACK, SRC_MAIN, SOURCE_LABELS,
 )
 
-# ── Comparator GPIO pins ─────────────────────────────────────────────
 COMPARATOR1_PIN = 23  # Voltmeter
-COMPARATOR2_PIN = 24  # Ohmmeter
+# COMPARATOR2_PIN imported from ohmmeter.py -> now 25
 
-# ── SPI for MCP4231 digipot ──────────────────────────────────────────
 DIGIPOT_SPI_CHANNEL = 0
 DIGIPOT_SPI_SPEED   = 50_000
 DIGIPOT_SPI_FLAGS   = 0
 
 MEASURE_INTERVAL = 0.5
 
-# ── Initialise pigpio ─────────────────────────────────────────────────
 pi = pigpio.pi()
 if not pi.connected:
     print("Cannot connect to pigpio daemon. Run 'sudo pigpiod' first.")
     exit(1)
 
-# ── Peripherals ───────────────────────────────────────────────────────
 lcd = i2c_lcd.lcd(pi, width=20)
 
 digipot_handle = pi.spi_open(
@@ -66,27 +56,21 @@ adc_handle = open_adc(pi)
 print(f"Digipot SPI handle : {digipot_handle}")
 print(f"ADC SPI handle     : {adc_handle}")
 
-# ── GPIO setup ────────────────────────────────────────────────────────
-
-# Rotary encoder
 for pin in (PIN_A, PIN_B):
     pi.set_mode(pin, pigpio.INPUT)
     pi.set_pull_up_down(pin, pigpio.PUD_UP)
 
-# Button
 pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
-# 🔥 Comparator inputs (FIXED)
 pi.set_mode(COMPARATOR1_PIN, pigpio.INPUT)
 pi.set_mode(COMPARATOR2_PIN, pigpio.INPUT)
 
-# IMPORTANT: disable internal pull-ups (you have external 10k)
+# External 10k pull-ups are used on comparator outputs
 pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
 pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
 
-# ── Shared state ──────────────────────────────────────────────────────
 state = {
     'menu_selection':    1,
     'isMainPage':        True,
@@ -97,7 +81,6 @@ state = {
 
 setup_callbacks(state, pi, lcd)
 
-# ── UI Helpers ────────────────────────────────────────────────────────
 
 def show_main_menu():
     lcd.put_line(0, 'Main Menu')
@@ -175,8 +158,6 @@ def run_voltmeter():
         )
 
 
-# ── Display helpers ───────────────────────────────────────────────────
-
 def format_ohms(ohms, width=8):
     if ohms >= 1000:
         s = f'{ohms / 1000:.2f}k'
@@ -212,8 +193,6 @@ def build_display_lines(step):
     line3 = 'Hold btn: main menu'
     return line0, line1, line2, line3
 
-
-# ── Main loop ─────────────────────────────────────────────────────────
 
 print("Starting Deliverable 7 driver...")
 
