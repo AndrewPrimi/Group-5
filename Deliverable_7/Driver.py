@@ -2,7 +2,7 @@
 Driver.py – Deliverable 7
 
 Voltmeter comparator output -> GPIO 23
-Ohmmeter comparator output  -> GPIO 25
+Ohmmeter comparator output  -> GPIO 24
 """
 
 import pigpio
@@ -30,7 +30,7 @@ from voltmeter import (
 )
 
 COMPARATOR1_PIN = 23  # Voltmeter
-# COMPARATOR2_PIN imported from ohmmeter.py -> now 25
+# COMPARATOR2_PIN imported from ohmmeter.py = 24
 
 DIGIPOT_SPI_CHANNEL = 0
 DIGIPOT_SPI_SPEED   = 50_000
@@ -64,12 +64,15 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
+# Comparator GPIOs
 pi.set_mode(COMPARATOR1_PIN, pigpio.INPUT)
 pi.set_mode(COMPARATOR2_PIN, pigpio.INPUT)
 
-# External 10k pull-ups are used on comparator outputs
+# Voltmeter path can remain external-pull-up based
 pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
-pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
+
+# Ohmmeter path: TEST WITH ONLY INTERNAL PULL-UP
+pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_UP)
 
 state = {
     'menu_selection':    1,
