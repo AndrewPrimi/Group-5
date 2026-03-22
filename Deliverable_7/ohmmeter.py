@@ -2,22 +2,17 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-Hardware:
-  MCP4131 wiring (SPI CE1):
-    Pin 1 (CS)  → GPIO 7  (CE1)
-    Pin 2 (SCK) → GPIO 11 (SCLK)
-    Pin 3 (SDI) → GPIO 10 (MOSI)
-    Pin 4 (VSS) → GND
-    Pin 5 (P0A) → 3.3V
-    Pin 6 (P0W) → Op-Amp V−
-    Pin 7 (P0B) → GND
-    Pin 8 (VDD) → 3.3V
+Comparator assignment:
+  Comparator 2 on LM339:
+    Output 2  = pin 1   -> GPIO 24
+    - Input 2 = pin 6   -> buffered DAC output
+    + Input 2 = pin 7   -> Node A
 
-  Circuit:
-    3.3V → R_REF → Node A → R_ext (unknown) → GND
-    Node A  → comparator V+
-    P0W     → comparator V−
-    Output  → GPIO 23
+Node A:
+  3.3V -> R_REF -> Node A -> R_unknown -> GND
+
+Important:
+  The DAC/buffer path and Node A must NOT be tied together.
 """
 
 import time
@@ -25,21 +20,21 @@ import math
 import pigpio
 
 # ── Hardware constants ────────────────────────────────────────────────────────
-ADC_SPI_CHANNEL   = 1
+ADC_SPI_CHANNEL   = 1          # MCP4131 on CE1
 ADC_SPI_SPEED     = 50_000
 ADC_SPI_FLAGS     = 0
 
-COMPARATOR_PIN    = 23
+OHM_COMPARATOR_PIN = 24        # LM339 pin 1 -> GPIO 24
 
-# 5-bit SAR for the ohmmeter display/search
-MCP4131_MAX_STEPS = 31
+MCP4131_MAX_STEPS = 31         # 5-bit SAR steps: 0..31
 
 # ── Circuit constants ────────────────────────────────────────────────────────
-R_REF_OHMS            = 15700
-R_REF_TOLERANCE_PCT   = 0.043
+R_REF_OHMS            = 2000   # your new reference resistor
+R_REF_TOLERANCE_PCT   = 0.01   # adjust if needed
 V_SUPPLY              = 3.3
 
-# This fixes the earlier "about half" reading behavior
+# This factor kept your ohmmeter reading correctly before.
+# Leave it unless your measurements say otherwise.
 OHMS_CAL_FACTOR       = 1.90
 
 # ── Measurement range for display ────────────────────────────────────────────
@@ -51,8 +46,6 @@ _SETTLE_S = 0.02
 
 def open_adc(pi):
     """Open SPI handle for the MCP4131 DAC."""
-    pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
-    print(f"GPIO {COMPARATOR_PIN} pull-up set")
     return pi.spi_open(ADC_SPI_CHANNEL, ADC_SPI_SPEED, ADC_SPI_FLAGS)
 
 
@@ -61,29 +54,22 @@ def close_adc(pi, spi_handle):
     pi.spi_close(spi_handle)
 
 
-# ── Low-level DAC control ─────────────────────────────────────────────────────
-
 def _write_dac(pi, spi_handle, step):
     """
     Write 5-bit SAR step (0..31) to MCP4131 7-bit register (0..127).
-
-    IMPORTANT:
-    This is the original direction that was semi-working for your actual circuit.
     """
     step = max(0, min(step, MCP4131_MAX_STEPS))
     dac_code = round(step * 127 / MCP4131_MAX_STEPS)
     pi.spi_write(spi_handle, [0x00, dac_code])
 
 
-# ── SAR algorithm ─────────────────────────────────────────────────────────────
-
 def sar_measure(pi, spi_handle, comp_pin):
     """
-    Perform a 5-bit SAR conversion.
+    Perform a 5-bit SAR conversion for the ohmmeter.
 
-    This uses the original keep/discard behavior that matched your real setup:
-      comp == 0  -> keep bit
-      comp == 1  -> discard bit
+    Comparator behavior for your current working path:
+      comp == 0 -> keep bit
+      comp == 1 -> discard bit
     """
     step = 0
 
@@ -93,7 +79,7 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
+        print(f"  [OHM] bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
 
         if comp == 0:
             step = trial
@@ -102,13 +88,11 @@ def sar_measure(pi, spi_handle, comp_pin):
     return step
 
 
-def averaged_measure(pi, spi_handle, comp_pin, n=5):
+def averaged_measure(pi, spi_handle, comp_pin, n=11):
     """Return median step from n SAR conversions."""
     readings = sorted(sar_measure(pi, spi_handle, comp_pin) for _ in range(n))
     return readings[n // 2]
 
-
-# ── Conversion maths ──────────────────────────────────────────────────────────
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     """
@@ -120,7 +104,7 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
     Solve:
         R_ext = R_ref * step / (MAX - step)
 
-    Then apply calibration factor because your earlier readings were about half.
+    Then apply empirical calibration factor.
     """
     if step <= 0:
         return 0.0
