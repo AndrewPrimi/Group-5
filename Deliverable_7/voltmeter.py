@@ -45,7 +45,7 @@ def _sar_measure(pi, spi_handle, comp_pin):
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
 
-        if pi.read(comp_pin) == 1:
+        if pi.read(comp_pin) == 0:
             step = trial
 
     _write_dac(pi, spi_handle, step)
