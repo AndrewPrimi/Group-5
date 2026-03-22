@@ -1,26 +1,8 @@
-"""
-square_wave.py – Square wave generator via hardware PWM + MCP4231 amplitude.
-
-This version adds:
-- explicit debug prints
-- a simple linear mapping you can flip easily
-- immediate amplitude writes even when PWM is already running
-- a manual raw-wiper test helper
-
-PWM output:
-  GPIO 13 via pigpio hardware_PWM at 50% duty cycle
-
-Amplitude:
-  MCP4231 dual digipot on SPI CE0
-"""
-
 import time
 
-# ── Hardware constants ────────────────────────────────────────────────────────
 PWM_GPIO = 13
 DUTY = 500_000   # 50% duty cycle
 
-# ── User-facing constants ─────────────────────────────────────────────────────
 MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
@@ -31,15 +13,13 @@ DISPLAY_TO_ACTUAL_SCALE = 1.0
 MAX_WIPER = 127
 ANALOG_FULL_SCALE_VOLTS = 10.0
 
-# Direction tuning (adjust if needed)
 POS_INCREASES_WITH_AMP = False
 NEG_DECREASES_WITH_AMP = True
 
-# Command bytes (swap if needed)
 CMD_W0 = 0x00
 CMD_W1 = 0x10
-#CMD_W0 = 0x10
-#CMD_W1 = 0x00
+# CMD_W0 = 0x10
+# CMD_W1 = 0x00
 
 
 def _clamp(value, low, high):
@@ -53,6 +33,9 @@ def _display_amp_to_actual_amp(display_amp):
 
 
 def _actual_amp_to_steps(actual_amp):
+    """
+    Convert actual target amplitude to digipot wiper values.
+    """
     actual_amp = _clamp(float(actual_amp), 0.0, ANALOG_FULL_SCALE_VOLTS)
     t = actual_amp / ANALOG_FULL_SCALE_VOLTS
 
@@ -90,8 +73,6 @@ class SquareWaveGenerator:
         self._last_w0 = None
         self._last_w1 = None
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
-
     def _write_wipers(self, w0, w1):
         w0 = int(_clamp(w0, 0, MAX_WIPER))
         w1 = int(_clamp(w1, 0, MAX_WIPER))
@@ -121,8 +102,6 @@ class SquareWaveGenerator:
 
         self._write_wipers(w0, w1)
 
-    # ── Public API ────────────────────────────────────────────────────────────
-
     def set_frequency(self, frequency: int):
         self._frequency = int(_clamp(int(frequency), MIN_FREQ, MAX_FREQ))
         if self._running:
@@ -149,7 +128,7 @@ class SquareWaveGenerator:
     def stop(self):
         self._running = False
         self._pi.hardware_PWM(PWM_GPIO, 0, 0)
-        self._write_amplitude(0.0)
+        self._write_wipers(0, 0)
         if self._debug:
             print("[SquareWave] stopped")
 
@@ -172,32 +151,67 @@ class SquareWaveGenerator:
     def last_w1(self):
         return self._last_w1
 
-    # ── TEST FUNCTION ─────────────────────────────────────────────────────────
-
-    def test_swap_wipers(self, wait_seconds=10):
+    def test_square_wave_swap(self, frequency=1000, wait_seconds=10):
         """
-        Standalone hardware test:
-        1) W0 = 50%, W1 = 100%
-        2) wait
-        3) swap
-        4) wait
-        5) both → 0
+        Square-wave hardware test:
+          1) start PWM square wave
+          2) W0 = 50%, W1 = 100%
+          3) wait
+          4) W0 = 100%, W1 = 50%
+          5) wait
+          6) both wipers -> 0
+          7) stop PWM
         """
         w50 = round(MAX_WIPER * 0.5)
         w100 = MAX_WIPER
 
         if self._debug:
-            print("\n[TEST] Step 1: W0=50%, W1=100%")
+            print(f"\n[TEST] Starting square wave at {frequency} Hz")
+
+        self.set_frequency(frequency)
+        self._pi.hardware_PWM(PWM_GPIO, self._frequency, DUTY)
+        self._running = True
+
+        if self._debug:
+            print("[TEST] Step 1: W0=50%, W1=100%")
         self._write_wipers(w50, w100)
-
         time.sleep(wait_seconds)
 
         if self._debug:
-            print("\n[TEST] Step 2: W0=100%, W1=50%")
+            print("[TEST] Step 2: W0=100%, W1=50%")
         self._write_wipers(w100, w50)
-
         time.sleep(wait_seconds)
 
         if self._debug:
-            print("\n[TEST] Step 3: W0=0%, W1=0% (reset)")
+            print("[TEST] Step 3: W0=0%, W1=0%")
         self._write_wipers(0, 0)
+        time.sleep(1)
+
+        if self._debug:
+            print("[TEST] Step 4: stopping PWM")
+        self.stop()
+
+
+if __name__ == "__main__":
+    import pigpio
+
+    print("Running square_wave.py standalone square-wave test...")
+
+    pi = pigpio.pi()
+    if not pi.connected:
+        raise SystemExit("Run 'sudo pigpiod' first.")
+
+    spi = pi.spi_open(0, 50_000, 0)
+    gen = SquareWaveGenerator(pi, spi, debug=True)
+
+    try:
+        gen.test_square_wave_swap(frequency=1000, wait_seconds=10)
+
+    except KeyboardInterrupt:
+        print("\nTest interrupted.")
+
+    finally:
+        print("Cleaning up...")
+        gen.cleanup()
+        pi.spi_close(spi)
+        pi.stop()
