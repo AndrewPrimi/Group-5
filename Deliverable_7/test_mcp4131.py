@@ -4,29 +4,24 @@ import spidev
 import time
 
 # =========================
-# MCP41X1 test configuration
+# CONFIG (CHANGE IF NEEDED)
 # =========================
 SPI_BUS = 0
-SPI_DEVICE = 1      # CE1 usually = GPIO7
-SPI_SPEED = 1000000 # 1 MHz is fine
-DELAY = 2.0         # seconds between fixed test points
 
-# MCP4131 command bytes
-# Command format:
-#   upper nibble = command
-#   lower bits   = pot address bits
-#
-# Write data to pot 0 = 0x00, then send value byte
-CMD_WRITE_POT0 = 0x00
+# IMPORTANT:
+# If CS → GPIO8 (CE0) → use 0
+# If CS → GPIO7 (CE1) → use 1
+SPI_DEVICE = 1  
+
+SPI_SPEED = 1000000  # 1 MHz
+
+# MCP4131 command to write wiper (pot0)
+CMD_WRITE = 0x00
 
 def write_wiper(spi, value):
-    """Write 7-bit/8-bit value to MCP41X1 wiper."""
+    """Set digipot wiper (0–255)."""
     value = max(0, min(255, int(value)))
-    spi.xfer2([CMD_WRITE_POT0, value])
-
-def voltage_estimate(value, vdd=3.3):
-    """Estimated output voltage if P0A=0V and P0B=VDD."""
-    return (value / 255.0) * vdd
+    spi.xfer2([CMD_WRITE, value])
 
 def main():
     spi = spidev.SpiDev()
@@ -34,42 +29,41 @@ def main():
     spi.max_speed_hz = SPI_SPEED
     spi.mode = 0
 
-    print("\nMCP41X1 test starting")
-    print(f"SPI bus={SPI_BUS}, device={SPI_DEVICE}, speed={SPI_SPEED}")
-    print("Wire for this test:")
-    print("  P0A -> GND")
-    print("  P0B -> 3.3V")
-    print("  Measure P0W to GND with a voltmeter\n")
+    print("\n=== MCP4131 TEST START ===")
+    print("Make sure:")
+    print("P0A → GND")
+    print("P0B → 3.3V")
+    print("Measure P0W → GND (VOLTS, not ohms)\n")
 
-    # Fixed-point test
-    test_points = [0, 32, 64, 96, 128, 160, 192, 224, 255]
-
-    print("Fixed-point test:")
-    for val in test_points:
-        write_wiper(spi, val)
-        vout = voltage_estimate(val)
-        print(f"  Wiper={val:3d}   Expected Vw ~ {vout:.3f} V")
-        time.sleep(DELAY)
-
-    print("\nSweep test starting. Press Ctrl+C to stop.\n")
+    test_points = [0, 64, 128, 192, 255]
 
     try:
+        for val in test_points:
+            write_wiper(spi, val)
+
+            expected = (val / 255.0) * 3.3
+
+            print(f"\nSet wiper = {val}")
+            print(f"Expected voltage ≈ {expected:.2f} V")
+            print("→ Measure NOW")
+
+            time.sleep(4)
+
+        print("\nNow sweeping... watch voltage change smoothly\n")
+
         while True:
-            for val in range(0, 256, 4):
+            for val in range(0, 256, 5):
                 write_wiper(spi, val)
-                print(f"Wiper={val:3d}   Expected Vw ~ {voltage_estimate(val):.3f} V", end="\r")
                 time.sleep(0.05)
 
-            for val in range(255, -1, -4):
+            for val in range(255, -1, -5):
                 write_wiper(spi, val)
-                print(f"Wiper={val:3d}   Expected Vw ~ {voltage_estimate(val):.3f} V", end="\r")
                 time.sleep(0.05)
 
     except KeyboardInterrupt:
-        print("\n\nStopping test...")
+        print("\nStopping... resetting to 0")
         write_wiper(spi, 0)
         spi.close()
-        print("Done. Wiper reset to 0.")
 
 if __name__ == "__main__":
     main()
