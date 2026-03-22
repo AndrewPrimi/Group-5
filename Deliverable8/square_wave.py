@@ -28,7 +28,7 @@ MAX_AMP = 10.0
 
 # Set to 1.0 if you want LCD value = actual target
 # Set to 1/3 if you want actual target = LCD/3
-DISPLAY_TO_ACTUAL_SCALE = 1.0 / 3.0
+DISPLAY_TO_ACTUAL_SCALE = 1.0# / 3.0
 
 MAX_WIPER = 127
 ANALOG_FULL_SCALE_VOLTS = 10.0
@@ -45,11 +45,14 @@ ANALOG_FULL_SCALE_VOLTS = 10.0
 #   more amplitude -> W1 goes up, W0 goes down
 # ---------------------------------------------------------------------------
 POS_INCREASES_WITH_AMP = True
-NEG_DECREASES_WITH_AMP = True
+NEG_DECREASES_WITH_AMP = False
 
 # If your command bytes are swapped in hardware, flip these:
 CMD_W0 = 0x00
 CMD_W1 = 0x10
+
+#CMD_W0 = 0x00 try this next
+#CMD_W1 = 0x10
 
 
 def _clamp(value, low, high):
