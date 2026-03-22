@@ -6,6 +6,8 @@ Performs successive-approximation (SAR) logic for voltmeter and ohmmeter.
 import time
 import pigpio
 
+print("USING sar_logic.py FROM:", __file__)
+
 MAX_CODE = 127  # 7-bit digipot: 0..127
 
 
@@ -53,7 +55,6 @@ class SAR_ADC:
 
             comp = self._read_comparator()
 
-            # Assumption:
             # comp == 1 means DAC/reference is too high
             if comp == 1:
                 high = mid - 1
@@ -63,40 +64,34 @@ class SAR_ADC:
         return max(0, min(MAX_CODE, high))
 
     def read_voltage(self, Vref):
-        """
-        Unipolar read: 0 to Vref
-        """
         step = self.read_step()
         voltage = Vref * (step / MAX_CODE)
+        print(f"[DEBUG] read_voltage -> step={step}, Vref={Vref}, voltage={voltage:.6f}")
         return voltage, step
 
     def read_voltage_bipolar(self, full_scale_voltage):
-        """
-        Bipolar read: -full_scale_voltage to +full_scale_voltage
-        """
         step = self.read_step()
         voltage = -full_scale_voltage + (2.0 * full_scale_voltage * step / MAX_CODE)
+        print(f"[DEBUG] read_voltage_bipolar -> step={step}, full_scale={full_scale_voltage}, voltage={voltage:.6f}")
         return voltage, step
 
     def read_ohms(self, Vref, R_known):
-        """
-        Ohmmeter formula:
-            Vout = Vref * R_unknown / (R_known + R_unknown)
-            R_unknown = R_known * Vout / (Vref - Vout)
-
-        The *2.0 factor is included because your readings are consistently half.
-        """
         Vin, step = self.read_voltage(Vref)
 
         if Vin <= 0:
+            print("[DEBUG] read_ohms -> Vin <= 0, returning 0.0")
             return 0.0, step
 
         if Vin >= Vref:
+            print("[DEBUG] read_ohms -> Vin >= Vref, returning inf")
             return float("inf"), step
 
-        R_unknown = R_known * Vin / (Vref - Vin)
+        R_unknown_raw = R_known * Vin / (Vref - Vin)
+        R_unknown = 2.0 * R_unknown_raw
 
-        # correction for your current measured half-scale behavior
-        R_unknown = 2.0 * R_unknown
+        print(
+            f"[DEBUG] read_ohms -> step={step}, Vin={Vin:.6f}, "
+            f"R_known={R_known}, raw={R_unknown_raw:.6f}, corrected={R_unknown:.6f}"
+        )
 
         return R_unknown, step
