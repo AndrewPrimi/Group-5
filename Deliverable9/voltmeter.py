@@ -1,13 +1,13 @@
 """
 voltmeter.py
-SAR ADC voltmeter — measures DC voltage over ±5 V and displays
+SAR ADC voltmeter — measures DC voltage over approximately ±5 V and displays
 the reading plus approximate tolerance on the 20×4 I2C LCD.
 
 Hardware:
   Comparator 1 on LM339:
-    Pin 4 = inverting input  (DAC reference from TL081 output)
-    Pin 5 = non-inverting input (scaled voltmeter op-amp output)
-    Pin 2 = output -> GPIO 23
+    pin 4 = inverting input  (DAC reference from TL081 output)
+    pin 5 = non-inverting input (scaled voltmeter op-amp output)
+    pin 2 = output -> GPIO 23
 """
 
 import time
@@ -34,9 +34,9 @@ def _sar_measure(pi, spi_handle, comp_pin):
     """
     5-bit SAR conversion for voltmeter.
 
-    Comparator behavior used here:
-      GPIO LOW  (0) -> Vin_scaled < DAC -> DAC too high -> DISCARD bit
-      GPIO HIGH (1) -> Vin_scaled > DAC -> DAC too low  -> KEEP bit
+    Current working logic:
+      comp == 0 -> keep bit
+      comp == 1 -> discard bit
     """
     step = 0
 
@@ -58,26 +58,57 @@ def _averaged_measure(pi, spi_handle, comp_pin, n=11):
     return readings[n // 2]
 
 
-# ── Voltage range / calibration ───────────────────────────────────────────────
-V_MAX = 5.0
-V_MIN = -5.0
-
-# Calibration points from your measured behavior can be adjusted later if needed
+# ── Calibration data ──────────────────────────────────────────────────────────
+# Based on your measured behavior:
+#
+# actual input -> displayed by old code
+#  5.0 ->  5.00
+#  4.5 ->  4.33
+#  4.0 ->  3.67
+#  3.5 ->  3.33
+#  3.0 ->  2.75
+#  2.5 ->  2.25
+#  2.0 ->  2.00
+#  1.5 ->  1.33
+#  1.0 ->  0.67
+#  0.5 ->  0.33
+#  0.0 -> -0.33
+# -0.5 -> -1.00
+# -1.0 -> -1.33
+# -1.5 -> -2.00
+# -2.0 -> -2.50
+# -2.5 -> -3.00
+# -3.0 -> -3.33
+# -3.5 -> -4.00
+# -4.0 -> -5.00
+#
+# We invert that mapping here:
+# old_displayed_value -> actual_value
 CAL_POINTS = [
-    (0,  -5.00),
-    (2,  -4.00),
-    (5,  -3.00),
-    (9,  -2.00),
-    (12, -1.00),
-    (15,  0.00),
-    (18,  1.00),
-    (21,  2.00),
-    (25,  3.00),
-    (28,  4.00),
-    (31,  5.00),
+    (-5.00, -4.00),
+    (-4.00, -3.50),
+    (-3.33, -3.00),
+    (-3.00, -2.50),
+    (-2.50, -2.00),
+    (-2.00, -1.50),
+    (-1.33, -1.00),
+    (-1.00, -0.50),
+    (-0.33,  0.00),
+    ( 0.33,  0.50),
+    ( 0.67,  1.00),
+    ( 1.33,  1.50),
+    ( 2.00,  2.00),
+    ( 2.25,  2.50),
+    ( 2.75,  3.00),
+    ( 3.33,  3.50),
+    ( 3.67,  4.00),
+    ( 4.33,  4.50),
+    ( 5.00,  5.00),
 ]
 
-VOLT_TOL_V = 0.35
+V_MIN = -5.0
+V_MAX = 5.0
+VOLT_TOL_V = 0.15  # tighter displayed tolerance after calibration
 
 
 # ── Source menu ───────────────────────────────────────────────────────────────
@@ -91,29 +122,69 @@ NUM_SOURCES   = len(SOURCE_LABELS)
 _DEBOUNCE_US = 200_000
 
 
-# ── Conversion maths ──────────────────────────────────────────────────────────
+# ── Conversion helpers ────────────────────────────────────────────────────────
+
+def _interp(x, x0, y0, x1, y1):
+    if x1 == x0:
+        return y0
+    return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
+
+
+def _old_step_to_voltage(step):
+    """
+    The old step-to-voltage mapping that produced the readings you gave.
+    This is kept only as an intermediate before calibration correction.
+    """
+    # Previous calibration table that roughly matched your old displayed values
+    old_points = [
+        (0,  -5.00),
+        (2,  -4.00),
+        (5,  -3.00),
+        (9,  -2.00),
+        (12, -1.00),
+        (15,  0.00),
+        (18,  1.00),
+        (21,  2.00),
+        (25,  3.00),
+        (28,  4.00),
+        (31,  5.00),
+    ]
+
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+
+    if step <= old_points[0][0]:
+        return old_points[0][1]
+
+    if step >= old_points[-1][0]:
+        return old_points[-1][1]
+
+    for (s0, v0), (s1, v1) in zip(old_points, old_points[1:]):
+        if s0 <= step <= s1:
+            return _interp(step, s0, v0, s1, v1)
+
+    return 0.0
+
 
 def step_to_voltage(step):
     """
-    Convert a 5-bit SAR step (0–31) to voltage using piecewise-linear
-    interpolation through measured calibration points.
-    """
-    step = max(0, min(step, MCP4131_MAX_STEPS))
+    Convert SAR step to corrected voltage.
 
-    if step <= CAL_POINTS[0][0]:
+    Flow:
+      step -> old displayed voltage estimate -> calibrated actual voltage
+    """
+    raw_v = _old_step_to_voltage(step)
+
+    if raw_v <= CAL_POINTS[0][0]:
         return CAL_POINTS[0][1]
 
-    if step >= CAL_POINTS[-1][0]:
+    if raw_v >= CAL_POINTS[-1][0]:
         return CAL_POINTS[-1][1]
 
-    for (s0, v0), (s1, v1) in zip(CAL_POINTS, CAL_POINTS[1:]):
-        if s0 <= step <= s1:
-            if s1 == s0:
-                return v0
-            frac = (step - s0) / (s1 - s0)
-            return v0 + frac * (v1 - v0)
+    for (x0, y0), (x1, y1) in zip(CAL_POINTS, CAL_POINTS[1:]):
+        if x0 <= raw_v <= x1:
+            return _interp(raw_v, x0, y0, x1, y1)
 
-    return 0.0
+    return raw_v
 
 
 # ── Display helpers ───────────────────────────────────────────────────────────
@@ -138,9 +209,9 @@ def build_source_menu_lines(selection):
 def build_measurement_lines(step, source_label="External"):
     v = step_to_voltage(step)
 
-    if step <= 0:
+    if v <= V_MIN:
         line2 = f"{_fmt_v(V_MIN)} (at min)"
-    elif step >= MCP4131_MAX_STEPS:
+    elif v >= V_MAX:
         line2 = f"{_fmt_v(V_MAX)} (at max)"
     else:
         line2 = f"{_fmt_v(v)} +/-{VOLT_TOL_V:.2f}V"
@@ -220,7 +291,7 @@ def run_measurement(state, pi, lcd, adc_handle,
             lcd.put_line(1, l1)
             lcd.put_line(2, l2)
             lcd.put_line(3, l3)
-            print(f"[Voltmeter] step={step}  {l2.strip()}")
+            print(f"[Voltmeter] step={step}  voltage={step_to_voltage(step):+.2f} V")
         time.sleep(0.05)
 
     clear_callbacks(state)

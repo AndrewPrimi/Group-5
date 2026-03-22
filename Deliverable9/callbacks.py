@@ -282,10 +282,6 @@ def ohm_button_callback(gpio, level, tick):
     _s['isOhmPage'] = False
 
 
-
-
-
-
 # ── Page runners (Deliverable 8) ───────────────────────────────────────────────
 
 def run_type_menu():
@@ -487,6 +483,84 @@ def run_dc_reference_menu():
                 state['dc_output_on'] = False
             return False
 
+# ── Voltmeter-page callbacks ─────────────────────────────────────────────────── 
+        
+def run_source_menu(state, pi, lcd):
+    state['volt_source_sel']  = SRC_EXTERNAL
+    state['volt_source_done'] = False
+    state['button_last_tick'] = None
+    clear_callbacks(state)
+
+    def _on_rotate(direction):
+        state['volt_source_sel'] = (state['volt_source_sel'] + direction) % NUM_SOURCES
+        _redraw()
+
+    def _on_button(_gpio, level, tick):
+        if level != 0:
+            return
+        last = state.get('button_last_tick')
+        if last is not None and pigpio.tickDiff(last, tick) < _DEBOUNCE_US:
+            return
+        state['button_last_tick'] = tick
+        state['volt_source_done'] = True
+
+    def _redraw():
+        for row, text in enumerate(build_source_menu_lines(state['volt_source_sel'])):
+            lcd.put_line(row, text)
+
+    _redraw()
+
+    decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, _on_rotate)
+    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
+    state['active_callbacks'] = [decoder, cb_btn]
+
+    while not state['volt_source_done']:
+        time.sleep(0.05)
+
+    clear_callbacks(state)
+    return state['volt_source_sel']
+
+
+def run_measurement(state, pi, lcd, adc_handle,
+                    source_label="External", interval=0.5):
+    state['volt_meas_active'] = True
+    state['button_last_tick'] = None
+    clear_callbacks(state)
+
+    def _on_button(_gpio, level, tick):
+        if level != 0:
+            return
+        last = state.get('button_last_tick')
+        if last is not None and pigpio.tickDiff(last, tick) < _DEBOUNCE_US:
+            return
+        state['button_last_tick'] = tick
+        state['volt_meas_active'] = False
+
+    lcd.put_line(0, "Voltmeter")
+    lcd.put_line(1, f"Src: {source_label}")
+    lcd.put_line(2, "Measuring...")
+    lcd.put_line(3, "Btn: back")
+
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
+    state['active_callbacks'] = [cb_btn]
+
+    last_update = 0.0
+    while state['volt_meas_active']:
+        now = time.time()
+        if now - last_update >= interval:
+            last_update = now
+            step = _averaged_measure(pi, adc_handle, COMPARATOR1_PIN, n=11)
+            l0, l1, l2, l3 = build_measurement_lines(step, source_label)
+            lcd.put_line(0, l0)
+            lcd.put_line(1, l1)
+            lcd.put_line(2, l2)
+            lcd.put_line(3, l3)
+            print(f"[Voltmeter] step={step}  voltage={step_to_voltage(step):+.2f} V")
+        time.sleep(0.05)
+
+    clear_callbacks(state)
+
+        
 
 def run_main_menu():
     while True:
