@@ -4,14 +4,21 @@ import spidev
 import time
 
 SPI_BUS = 0
-SPI_DEVICE = 1      # GPIO7 = CE1
-SPI_SPEED = 1000000
+SPI_DEVICE = 1
+SPI_SPEED = 100000
 
-CMD_WRITE = 0x00
+CMD_WRITE_WIPER0 = 0x00
 
 def write_wiper(spi, value):
-    value = max(0, min(255, int(value)))
-    spi.xfer2([CMD_WRITE, value])
+    value = max(0, min(127, int(value)))
+
+    # Flip the direction
+    actual_value = 127 - value
+
+    spi.xfer2([CMD_WRITE_WIPER0, actual_value])
+
+def expected_voltage(value, vdd=3.3):
+    return (value / 127.0) * vdd
 
 def main():
     spi = spidev.SpiDev()
@@ -19,41 +26,36 @@ def main():
     spi.max_speed_hz = SPI_SPEED
     spi.mode = 0
 
-    print("\n=== MCP4131 TEST START ===")
-    print("Wiring for this test:")
-    print("Pin 8 (VDD) -> 3.3V")
-    print("Pin 4 (VSS) -> GND")
-    print("Pin 5 (P0A) -> GND")
-    print("Pin 7 (P0B) -> 3.3V")
-    print("Pin 6 (P0W) -> multimeter red lead")
-    print("Multimeter black lead -> GND")
-    print("Measure VOLTAGE, not resistance\n")
+    print("\n=== MCP4131 DIGIPOT TEST (FLIPPED DIRECTION) ===")
+    print("0 should now be near 0 V, and 127 should be near 3.3 V.\n")
 
-    test_points = [0, 64, 128, 192, 255]
+    test_points = [0, 32, 64, 96, 127]
 
     try:
+        print("Fixed-point test starting...\n")
         for val in test_points:
             write_wiper(spi, val)
-            expected = (val / 255.0) * 3.3
-            print(f"Set wiper = {val:3d}   Expected ≈ {expected:.3f} V")
-            time.sleep(4)
+            print(f"Wiper set to {val:3d} | Expected ≈ {expected_voltage(val):.3f} V")
+            time.sleep(5)
 
-        print("\nSweeping continuously now. Press Ctrl+C to stop.\n")
+        print("\nSweep test starting. Press Ctrl+C to stop.\n")
 
         while True:
-            for val in range(0, 256, 5):
+            for val in range(0, 128):
                 write_wiper(spi, val)
-                time.sleep(0.05)
+                time.sleep(0.03)
 
-            for val in range(255, -1, -5):
+            for val in range(127, -1, -1):
                 write_wiper(spi, val)
-                time.sleep(0.05)
+                time.sleep(0.03)
 
     except KeyboardInterrupt:
         print("\nStopping test...")
         write_wiper(spi, 0)
+
+    finally:
         spi.close()
-        print("Done.")
+        print("SPI closed. Done.")
 
 if __name__ == "__main__":
     main()
