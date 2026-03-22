@@ -68,7 +68,7 @@ def main():
 
             elif choice == "3":
                 voltage, v_code = read_voltmeter_value(voltage_sar)
-                ohms, o_code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=1000.0)
+                ohms, code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=2000.0)
 
                 print(f"Voltage    = {voltage:.3f} V | code = {v_code}")
                 print(f"Resistance = {ohms:.3f} ohms | code = {o_code}")
