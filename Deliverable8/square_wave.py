@@ -201,4 +201,3 @@ class SquareWaveGenerator:
         if self._debug:
             print("\n[TEST] Step 3: W0=0%, W1=0% (reset)")
         self._write_wipers(0, 0)
-)
