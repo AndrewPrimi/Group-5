@@ -23,10 +23,10 @@ ROTARY_BTN_PIN      = 17     # Rotary encoder push-button
 
 # Debounce threshold (microseconds)
 BUTTON_DEBOUNCE_US  = 200_000    # 200 ms  – ignore repeat presses
-HOLD_US             = 2_000_000  # 2 s button hold
 
 # Number of selectable items on the main menu
-MENU_ITEMS = 4   # Function Generator, Ohmmeter, Voltmeter, DC Reference
+MENU_ITEMS = 2   # Ohmmeter, Voltmeter
+
 
 def setup_callbacks(state, pi, lcd):
     """Give callbacks access to shared state, pi, and lcd."""
@@ -36,13 +36,43 @@ def setup_callbacks(state, pi, lcd):
     _lcd = lcd
 
 
-def clear_callbacks():
+def clear_callbacks(state):
     """Cancel and remove all active pigpio callbacks / decoder objects."""
-    for cb in _s.get('active_callbacks', []):
+    for cb in state['active_callbacks']:
         cb.cancel()
-    _s['active_callbacks'] = []
+    state['active_callbacks'] = []
 
-# ── Rotary encoder input callbacks ─────────────────────────────────────────
+
+# ── Main-menu callbacks (Deliverable 7) ───────────────────────────────────────
+
+def menu_direction_callback(direction):
+    """Rotate encoder on main menu → move the cursor between items."""
+    old = _s['menu_selection']
+    if old not in (1, 2):
+        old = 1
+    _s['menu_selection'] = 1 + ((old - 1 + direction) % MENU_ITEMS)
+    _redraw_main_menu()
+
+
+def menu_button_callback(gpio, level, tick):
+    """Button press on main menu → enter the highlighted page."""
+    if level != 0:          # only act on falling edge
+        return
+    if _debounce(tick):
+        return
+    if _s['menu_selection'] in (1, 2):
+        _s['isMainPage'] = False
+
+
+# ── Ohmmeter-page callbacks ───────────────────────────────────────────────────
+
+def ohm_button_callback(gpio, level, tick):
+    """Button press on the ohmmeter page → return to main menu."""
+    if level != 0:
+        return
+    if _debounce(tick):
+        return
+    _s['isOhmPage'] = False
 
 def _button_cb(gpio, level, tick):
     if level == 0:                          # press (falling edge)
@@ -59,6 +89,7 @@ def _button_cb(gpio, level, tick):
             else:
                 state['button_pressed'] = True
             state['button_press_tick'] = None
+
 
 def _encoder_cb(direction):
     state['encoder_delta'] += direction
@@ -156,134 +187,6 @@ def adjust_value(title, value, min_val, max_val, step, fmt):
             return None
 
         time.sleep(0.02)
-
-
-# ── Function Generator ─────────────────────────────────────────────────────────
-
-def run_function_generator():
-    while True:
-        choice = pick_menu(
-            'FUNC GENERATOR',
-            ['Type', 'Frequency', 'Amplitude', 'Output', 'Back']
-        )
-
-        if choice == 'Type':
-            run_type_menu()
-
-        elif choice == 'Frequency':
-            run_frequency_menu()
-
-        elif choice == 'Amplitude':
-            run_amplitude_menu()
-
-        elif choice == 'Output':
-            run_output_menu()
-
-        elif choice == 'Back':
-            if _s['output_on']:
-                gen.stop()
-                _s['output_on'] = False
-            return
-
-
-# ── Main Menu ───────────────────────────────────────────────────────── 
-
-def run_main_menu():
-    while True:
-        choice = pick_menu(
-            'Main Menu',
-            [
-                'Function Generator',
-                'Ohmmeter',
-                'Voltmeter',
-                'DC Reference',
-                'Quit'
-            ]
-        )
-
-        if choice == 'Function Generator':
-            run_function_generator()
-
-        elif choice == 'Ohmmeter':
-            run_ohmmeter()
-
-        elif choice == 'Voltmeter':
-            run_voltmeter()
-
-        elif choice == 'DC Reference':
-            go_main = run_dc_reference_menu()
-            if go_main:
-                continue
-
-        elif choice in ('Quit', 'Back'):
-            if _s['output_on']:
-                gen.stop()
-            if _s['dc_output_on']:
-                dc_ref.stop()
-
-            _lcd.put_line(0, 'Goodbye!')
-            _lcd.put_line(1, '')
-            _lcd.put_line(2, '')
-            _lcd.put_line(3, '')
-            return
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-    
-            
-# ── Main-menu callbacks (Deliverable 7) ───────────────────────────────────────
-
-def menu_direction_callback(direction):
-    """Rotate encoder on main menu → move the cursor between items."""
-    old = _s['menu_selection']
-    if old not in (1, 2):
-        old = 1
-    _s['menu_selection'] = 1 + ((old - 1 + direction) % MENU_ITEMS)
-    _redraw_main_menu()
-
-
-def menu_button_callback(gpio, level, tick):
-    """Button press on main menu → enter the highlighted page."""
-    if level != 0:          # only act on falling edge
-        return
-    if _debounce(tick):
-        return
-    if _s['menu_selection'] in (1, 2):
-        _s['isMainPage'] = False
-
-
-# ── Ohmmeter-page callbacks ───────────────────────────────────────────────────
-
-def ohm_button_callback(gpio, level, tick):
-    """Button press on the ohmmeter page → return to main menu."""
-    if level != 0:
-        return
-    if _debounce(tick):
-        return
-    _s['isOhmPage'] = False
-
-
-
-
 
 
 # ── Page runners (Deliverable 8) ───────────────────────────────────────────────

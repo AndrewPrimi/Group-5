@@ -1,7 +1,7 @@
 """
 Driver.py – Deliverable 9
 ==========================
-LCD + rotary-encoder UI for the Ohmmeter and Voltmeter.
+LCD + rotary-encoder UI for Checkpoint B.
 
 Navigation:
   Rotate      →  move menu cursor
@@ -18,6 +18,7 @@ Menu structure:
 Hardware:
   LCD          : I2C 20×4 at address 0x27
   Rotary enc.  : A = GPIO 22, B = GPIO 27, button = GPIO 17
+  Digipots     : SPI CE0 (GPIO 8)
   MCP4131 DAC  : SPI CE1 (GPIO 7)  — shared by ohmmeter and voltmeter
   Ohmmeter cmp : GPIO 23
   Voltmeter cmp: GPIO 24
@@ -30,23 +31,41 @@ import i2c_lcd
 import rotary_encoder
 from callbacks import (
     setup_callbacks, clear_callbacks,
+    
+    # ── Checkpoint C ─────────────────────────────────────────────────────────
     menu_direction_callback, menu_button_callback,
+    varconst_direction_callback, varconst_button_callback,
+    
+    pot_direction_callback, callback_set_digi,
+    constant_direction_callback, constant_button_callback, 
+    
     ohm_button_callback, _redraw_main_menu,
     PIN_A, PIN_B, ROTARY_BTN_PIN,
 )
+
+# ── Checkpoint B ─────────────────────────────────────────────────────────
+from square_wave import (
+    SquareWaveGenerator,
+    MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP,
+)
+
+from dc_reference import DCReferenceGenerator
+from sar_logic import SAR_ADC
+        
 from ohmmeter import (
     open_adc, close_adc,
-    averaged_measure,
-    sar_measure,
-    step_to_resistance,
-    tolerance,
-    COMPARATOR_PIN as OHM_COMPARATOR_PIN,
+    write_dac,
+    sar_measure, averaged_measure,
+    interp, calibrate_resistance,
+    step_to_raw_resistance,
+    step_to_resistance, tolerance,
+    COMPARATOR2_PIN as OHM_COMPARATOR_PIN,
     MCP4131_MAX_STEPS,
     R_MIN_OHMS, R_MAX_OHMS,
 )
 from voltmeter import (
-    run_source_menu, run_measurement,
-    SRC_BACK, SOURCE_LABELS,
+    write_dac, sar_measure,
+    averaged_measure,
 )
 
 # ── Timing ────────────────────────────────────────────────────────────────────
@@ -80,11 +99,24 @@ pi.set_pull_up_down(24, pigpio.PUD_UP)
 
 # ── Shared application state ──────────────────────────────────────────────────
 state = {
-    'menu_selection':    1,       # 1 = Ohmmeter, 2 = Voltmeter
+    'menu_selection':    0,       # 0 = Function Generator, 1 = Ohmmeter, 2 = Voltmeter, 3 = DC Reference, 4, Frequency Measurement
     'isMainPage':        True,
     'isOhmPage':         False,
-    'button_last_tick':  None,
     'active_callbacks':  [],
+    
+    'button_last_tick':  None,
+    'button_press_tick': None,
+    'button_pressed':    False,
+    'button_held':       False,
+    
+    # Deliverable 8
+    'wave_type':         'Square',
+    'frequency':         1000,
+    'amplitude':         0.0,
+    'output_on':         False,
+    'dc_voltage':        0.0,
+    'dc_output_on':      False,
+    'encoder_delta':     0,
 }
 
 setup_callbacks(state, pi, lcd)
@@ -106,9 +138,13 @@ def build_ohm_lines(step):
     r   = step_to_resistance(step)
     tol = tolerance(step)
 
-    if step <= 0:
-        return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
+    #if step <= 0:
+        #return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
+    #if step >= MCP4131_MAX_STEPS:
+        #return "Ohmmeter", "Open circuit", "", "Hold btn: main menu"
     if step >= MCP4131_MAX_STEPS:
+        return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
+    if step <= 0:
         return "Ohmmeter", "Open circuit", "", "Hold btn: main menu"
 
     r_str   = _fmt_ohms(r).strip()
@@ -204,10 +240,15 @@ print("Starting Deliverable 9 driver...")
 try:
     while True:
         run_main_menu()
-        if state['menu_selection'] == 1:
+        if state['menu_selection'] == 0:
+            run_function_generator()
+        elif state['menu_selection'] == 1:
             run_ohmmeter()
         elif state['menu_selection'] == 2:
             run_voltmeter()
+        elif state['menu_selection'] == 3:
+            run_dc_reference()
+            
 
 except KeyboardInterrupt:
     print("\nStopping...")
