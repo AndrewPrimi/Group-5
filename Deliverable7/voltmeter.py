@@ -1,27 +1,19 @@
-import time
-from ohms_steps import MAX_STEPS, step_to_ohms
+"""
+voltmeter.py
+
+Wrapper helpers for bipolar voltmeter operation.
+"""
+
 from sar_logic import SAR_ADC
 
-MAX_VOLTAGE = 6
-MIN_VOLTAGE = -6
 
-# GPIO output pins
+FULL_SCALE_VOLTAGE = 6.0   # final displayed range: -6V to +6V
 
 
- # ── Write step value ─────────────────────────────────────────────
- 
- # ── Compare comparator outputs ────────────────────────────────────
-
- # IF Negative Comparator output is HIGH and Positive is LOW , then we increase the steps by of potentiometer one until we get a HIGH Output
-
- # IF Negative Comparator output is LOW and Positive is HIGH, then we do the same thing, except program checking for the output at the negative comparator gate.
-
- # IF they are both HIGH, then we can assume that our voltage is out of range from -5V - 5V, so we can default our read value to 0V.
-
-
-pos_comparator = 0
-neg_comparator = 0
-
-
+def read_voltmeter_value(sar: SAR_ADC):
+    """
+    Returns (voltage, code) for bipolar voltmeter mode.
+    """
+    return sar.read_voltage_bipolar(FULL_SCALE_VOLTAGE)
 
 
