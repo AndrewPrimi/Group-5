@@ -14,15 +14,25 @@ The MCP4231 dual digital pot (SPI CE0) feeds a summing amplifier:
   W1 (command 0x10) → positive op-amp circuit  → sets +swing
   W0 (command 0x00) → negative op-amp circuit  → sets -swing
 
-Calibration endpoints:
+IMPORTANT:
+  The actual hardware output is intentionally scaled to 1/3 of the value
+  shown on the LCD / selected by the user.
+
+  Example:
+    LCD says 9.0 V  -> actual output target is 3.0 V
+    LCD says 6.0 V  -> actual output target is 2.0 V
+    LCD says 3.0 V  -> actual output target is 1.0 V
+
+Calibration endpoints (for actual hardware output):
   Amplitude  |  W0 step  |  W1 step
   -----------+-----------+---------
     0.0 V    |    127    |     0
    10.0 V    |      0    |   127
 
-  t  = amplitude / 10.0
-  W0 = round(127 - 127 * t)   # negative circuit decreases as amplitude rises
-  W1 = round(127 * t)          # positive circuit increases as amplitude rises
+So the code first scales:
+  actual_amp = displayed_amp / 3
+
+Then maps actual_amp into digipot steps.
 """
 
 import time
@@ -31,22 +41,33 @@ import time
 PWM_GPIO  = 13
 DUTY      = 500_000     # 50 % duty cycle (pigpio: 0 – 1_000_000)
 
-# ── User-facing range constants (imported by Driver.py) ───────────────────────
+# ── User-facing range constants (imported by Driver.py) ──────────────────────
 MIN_FREQ  = 100         # Hz
 MAX_FREQ  = 10_000      # Hz
 FREQ_STEP = 10          # Hz per encoder click
-MAX_AMP   = 10.0        # V peak
+MAX_AMP   = 10.0        # V shown on LCD / user-facing max
 
 
 def _amp_to_steps(amplitude):
     """
-    Map amplitude (0 – 10 V) to (W0_step, W1_step).
+    Map displayed amplitude (0 – 10 V) to (W0_step, W1_step).
+
+    The actual hardware output is intentionally 1/3 of the displayed value.
     W0 → negative op-amp, W1 → positive op-amp.
     """
+    # Clamp user-selected/displayed amplitude
     amplitude = max(0.0, min(MAX_AMP, amplitude))
-    t  = amplitude / MAX_AMP
-    w0 = round(127 - 127 * t)   # negative circuit
-    w1 = round(127 * t)          # positive circuit
+
+    # Scale actual output to 1/3 of displayed value
+    actual_amp = amplitude / 3.0
+
+    # Clamp actual amplitude to valid calibration range
+    actual_amp = max(0.0, min(MAX_AMP, actual_amp))
+
+    t  = actual_amp / MAX_AMP
+    w0 = round(127 - 127 * t)   # negative circuit decreases as amplitude rises
+    w1 = round(127 * t)         # positive circuit increases as amplitude rises
+
     return w0, w1
 
 
@@ -85,7 +106,7 @@ class SquareWaveGenerator:
             self._pi.hardware_PWM(PWM_GPIO, self._frequency, DUTY)
 
     def set_amplitude(self, amplitude: float):
-        """Update amplitude. Applied immediately via SPI if running."""
+        """Update displayed amplitude. Actual hardware output is 1/3 of this value."""
         self._amplitude = max(0.0, min(MAX_AMP, amplitude))
         if self._running:
             self._write_amplitude(self._amplitude)
