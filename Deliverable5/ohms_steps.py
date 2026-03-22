@@ -223,7 +223,7 @@ def _clamp(value, low, high):
 
 
 def _interp(x, x0, y0, x1, y1):
-    """Simple linear interpolation."""
+    Simple linear interpolation.
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
