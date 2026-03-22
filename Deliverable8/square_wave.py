@@ -44,15 +44,15 @@ ANALOG_FULL_SCALE_VOLTS = 10.0
 # Current assumption:
 #   more amplitude -> W1 goes up, W0 goes down
 # ---------------------------------------------------------------------------
-POS_INCREASES_WITH_AMP = True
-NEG_DECREASES_WITH_AMP = False
+POS_INCREASES_WITH_AMP = False
+NEG_DECREASES_WITH_AMP = True
 
 # If your command bytes are swapped in hardware, flip these:
-#CMD_W0 = 0x00
-#CMD_W1 = 0x10
+CMD_W0 = 0x00
+CMD_W1 = 0x10
 
-CMD_W0 = 0x10
-CMD_W1 = 0x00
+#CMD_W0 = 0x10
+#CMD_W1 = 0x00
 
 
 def _clamp(value, low, high):
