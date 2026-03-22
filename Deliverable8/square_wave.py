@@ -36,10 +36,10 @@ POS_INCREASES_WITH_AMP = False
 NEG_DECREASES_WITH_AMP = True
 
 # Command bytes (swap if needed)
-#CMD_W0 = 0x00
-#CMD_W1 = 0x10
-CMD_W0 = 0x10
-CMD_W1 = 0x00
+CMD_W0 = 0x00
+CMD_W1 = 0x10
+#CMD_W0 = 0x10
+#CMD_W1 = 0x00
 
 
 def _clamp(value, low, high):
