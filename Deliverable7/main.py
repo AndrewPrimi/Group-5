@@ -17,6 +17,8 @@ CURRENT_COMPARATOR_PIN = 23
 
 
 def main():
+    print("USING main.py")
+
     pi = pigpio.pi()
     if not pi.connected:
         print("Cannot connect to pigpio daemon.")
