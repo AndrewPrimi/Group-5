@@ -336,3 +336,4 @@ if __name__ == "__main__":
     # If you want a dense 10-ohm table:
     # dense = generate_dense_lookup()
     # print(dense[5000], dense[5010], dense[5020])
+    '''
