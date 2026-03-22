@@ -1,198 +1,90 @@
 """
-main.py – Entry point for the digital potentiometer controller.
+main.py
 
-Initialises hardware (pigpio, I2C LCD, SPI for the MCP4231), then runs a
-page-based menu loop driven by a rotary encoder and its push-button:
-
-  1. Main page       – choose Pot 1 or Pot 2
-  2. Var/Const page  – choose Variable or Constant resistance mode
-  3a. Variable page  – dial in a resistance with the encoder, press to set
-  3b. Constant page  – pick a preset (100, 1k, 5k, 10k), press to set
-
-A long button hold (2-3 s) on pages 3a/3b returns to the main page.
+Simple combined test runner for voltmeter and ohmmeter.
 """
 
-import pigpio
 import time
-import i2c_lcd
-from ohms_steps import (
-    ohms_to_step, step_to_ohms,
-    DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
-    CONSTANT_LABELS,
-)
-from callbacks import (
-    setup_callbacks, clear_callbacks,
-    menu_direction_callback, menu_button_callback,
-    varconst_direction_callback, varconst_button_callback,
-    pot_direction_callback, callback_set_digi,
-    constant_direction_callback, constant_button_callback,
-    PIN_A, PIN_B,
-)
-import rotary_encoder
+import pigpio
 
-# ── Hardware setup ──────────────────────────────────────
-
-# GPIO pin for the rotary encoder's built-in push-button
-rotaryEncoder_pin = 17
-
-# Connect to the pigpio daemon
-pi = pigpio.pi()
-if not pi.connected:
-    exit()
-
-# Initialise the 20x4 I2C LCD (PCF8574T backpack, default address 0x27)
-lcd = i2c_lcd.lcd(pi, width=20)
-
-# Open SPI for the MCP4231 dual digital potentiometer
-spi_handle = pi.spi_open(SPI_CHANNEL, SPI_SPEED, SPI_FLAGS)
-print(f"SPI handle: {spi_handle}")
-
-# Shared state dictionary
-# Passed to callbacks.py so interrupt handlers can read/write program state.
-state = {
-    # current target resistance (variable mode)
-    'ohms': DEFAULT_OHMS,
-    'selected_pot': 0,               # 0 = Pot 1, 1 = Pot 2
-    'menu_selection': 0,             # highlighted item on the main page
-    'isMainPage': True,              # flag: currently on main page?
-    'isVarConstPage': False,         # flag: currently on var/const page?
-    'var_const_selection': 0,        # 0 = Variable, 1 = Constant
-    'constant_selection': 0,         # index into CONSTANT_OHMS presets
-    # timestamp of last encoder detent (speed calc)
-    'last_time': None,
-    # tick when button was pressed (hold detection)
-    'button_press_tick': None,
-    'button_last_tick': None,        # tick of last accepted press (debounce)
-    'spi_handle': spi_handle,        # pigpio SPI handle for MCP4231
-    'active_callbacks': [],          # list of pigpio callbacks to cancel on page change
-}
+from ohms_steps import SPI_CHANNEL, SPI_SPEED, SPI_FLAGS
+from sar_logic import SAR_ADC
+from voltmeter import read_voltmeter_value
+from ohmmeter import read_ohmmeter_value
 
 
-# Encoder A/B channels
-pi.set_mode(PIN_A, pigpio.INPUT)
-pi.set_mode(PIN_B, pigpio.INPUT)
-pi.set_pull_up_down(PIN_A, pigpio.PUD_UP)
-pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
+VOLTAGE_COMPARATOR_PIN = 18
+CURRENT_COMPARATOR_PIN = 23
 
-# Encoder button
-pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
-pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 
-# 10 ms glitch filter on the button pin only.
-# The encoder channels are debounced by the Gray-code state machine in
-# rotary_encoder.decoder, so they don't need a glitch filter.
-pi.set_glitch_filter(rotaryEncoder_pin, 10000)
+def main():
+    pi = pigpio.pi()
+    if not pi.connected:
+        print("Cannot connect to pigpio daemon.")
+        print("Run: sudo pigpiod")
+        return
 
-# Inject hardware references into the callbacks module
-setup_callbacks(state, pi, lcd)
+    spi_handle = pi.spi_open(SPI_CHANNEL, SPI_SPEED, SPI_FLAGS)
 
-print("Starting...")
-try:
-    while True:
+    voltage_sar = SAR_ADC(
+        pi=pi,
+        spi_handle=spi_handle,
+        comparator_pin=VOLTAGE_COMPARATOR_PIN,
+        selected_pot=0,
+        settle_time=0.003,
+        invert_comparator=False,
+        invert_dac=True,
+        comparator_high_means_input_gt_dac=True,
+    )
 
-        # main page
-        state['isMainPage'] = True
-        state['menu_selection'] = 0
-        state['button_last_tick'] = None
-        clear_callbacks(state)
+    ohms_sar = SAR_ADC(
+        pi=pi,
+        spi_handle=spi_handle,
+        comparator_pin=CURRENT_COMPARATOR_PIN,
+        selected_pot=0,
+        settle_time=0.003,
+        invert_comparator=False,
+        invert_dac=True,
+        comparator_high_means_input_gt_dac=True,
+    )
 
-        # Draw the initial menu screen
+    try:
+        while True:
+            print("\nChoose mode:")
+            print("1 - Read voltmeter")
+            print("2 - Read ohmmeter")
+            print("3 - Read both")
+            print("q - Quit")
 
-        # Potentiometer selection
-        lcd.put_line(0, 'Select a Pot:')
-        lcd.put_line(1, '> Pot 1')
-        lcd.put_line(2, '  Pot 2')
-        lcd.put_line(3, '')
+            choice = input("> ").strip().lower()
 
-        # Register encoder rotation + button press callbacks
-        decoder = rotary_encoder.decoder(
-            pi, PIN_A, PIN_B, menu_direction_callback)
-        cb_btn = pi.callback(
-            rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
-        state['active_callbacks'] = [decoder, cb_btn]
+            if choice == "1":
+                voltage, code = read_voltmeter_value(voltage_sar)
+                print(f"Voltage = {voltage:.3f} V | code = {code}")
 
-        # Spin until the button callback clears isMainPage
-        while state['isMainPage']:
-            time.sleep(0.05)
+            elif choice == "2":
+                ohms, code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=1000.0)
+                print(f"Resistance = {ohms:.3f} ohms | code = {code}")
 
-        # page 2
-        state['isVarConstPage'] = True
-        state['var_const_selection'] = 0
-        state['button_last_tick'] = None
-        clear_callbacks(state)
+            elif choice == "3":
+                voltage, v_code = read_voltmeter_value(voltage_sar)
+                ohms, o_code = read_ohmmeter_value(ohms_sar, vref=3.3, r_known=1000.0)
 
-        lcd.put_line(0, 'Resistance Type:')
-        lcd.put_line(1, '> Variable')
-        lcd.put_line(2, '  Constant')
-        lcd.put_line(3, '')
+                print(f"Voltage    = {voltage:.3f} V | code = {v_code}")
+                print(f"Resistance = {ohms:.3f} ohms | code = {o_code}")
 
-        decoder = rotary_encoder.decoder(
-            pi, PIN_A, PIN_B, varconst_direction_callback)
-        cb_btn = pi.callback(
-            rotaryEncoder_pin, pigpio.FALLING_EDGE, varconst_button_callback)
-        state['active_callbacks'] = [decoder, cb_btn]
+            elif choice == "q":
+                break
 
-        while state['isVarConstPage']:
-            time.sleep(0.05)
+            else:
+                print("Invalid choice.")
 
-        if state['var_const_selection'] == 0:
-            # page 3a
-            state['isMainPage'] = False
-            state['last_time'] = None
-            state['button_last_tick'] = None
-            clear_callbacks(state)
+            time.sleep(0.2)
 
-            # Reset to default and display starting value
-            state['ohms'] = DEFAULT_OHMS
-            step = ohms_to_step(state['ohms'])
-            lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
-            lcd.put_line(1, f'Ohms: {step_to_ohms(step):.1f}')
-            lcd.put_line(2, '')
-            lcd.put_line(3, '')
+    finally:
+        pi.spi_close(spi_handle)
+        pi.stop()
 
-            # Encoder rotation adjusts ohms; button press writes to MCP4231.
-            # EITHER_EDGE on button so we can detect long holds on release.
-            decoder = rotary_encoder.decoder(
-                pi, PIN_A, PIN_B, pot_direction_callback)
-            cb_btn = pi.callback(
-                rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
-            state['active_callbacks'] = [decoder, cb_btn]
-            # Stay until a long hold sets isMainPage = True
-            while not state['isMainPage']:
-                if state['button_press_tick'] is not None:
-                    now = pi.get_current_tick()
-                    if pigpio.tickDiff(state['button_press_tick'], now) >= 2_000_000:
-                        # 3 seconds elapsed while held
-                        state['ohms'] = DEFAULT_OHMS
-                        state['button_press_tick'] = None
-                        state['isMainPage'] = True
-                time.sleep(0.05)
 
-        else:
-            # page 3b
-            state['isMainPage'] = False
-            state['constant_selection'] = 0
-            state['button_last_tick'] = None
-            clear_callbacks(state)
-
-            lcd.put_line(0, f'Pot {state["selected_pot"] + 1} - Constant')
-            lcd.put_line(1, f'Value: {CONSTANT_LABELS[0]} Ohms')
-            lcd.put_line(2, '')
-            lcd.put_line(3, '')
-
-            # Encoder cycles through presets; button writes chosen value.
-            decoder = rotary_encoder.decoder(
-                pi, PIN_A, PIN_B, constant_direction_callback)
-            cb_btn = pi.callback(
-                rotaryEncoder_pin, pigpio.EITHER_EDGE, constant_button_callback)
-            state['active_callbacks'] = [decoder, cb_btn]
-
-            while not state['isMainPage']:
-                time.sleep(0.05)
-
-except KeyboardInterrupt:
-    print("\nStopping...")
-    clear_callbacks(state)
-    lcd.close()
-    pi.spi_close(spi_handle)
-    pi.stop()
+if __name__ == "__main__":
+    main()
