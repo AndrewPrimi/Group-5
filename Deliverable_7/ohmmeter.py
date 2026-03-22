@@ -1,6 +1,9 @@
 """
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
+
+This version uses the corrected resistance formula:
+    R_unknown = R_ref * (MAX - step) / step
 """
 
 import time
@@ -16,9 +19,9 @@ MCP4131_MAX_STEPS = 31
 
 R_REF_OHMS            = 2000
 R_REF_TOLERANCE_PCT   = 0.01
-OHMS_CAL_FACTOR       = 26.0
+OHMS_CAL_FACTOR       = 1.00
 
-R_MIN_OHMS = 500
+R_MIN_OHMS = 100
 R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
@@ -69,13 +72,20 @@ def averaged_measure(pi, spi_handle, comp_pin, n=11):
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
-    if step <= 0:
-        return 0.0
+    """
+    Corrected formula:
+        step / MAX = R_ref / (R_ref + R_unknown)
 
-    if step >= MCP4131_MAX_STEPS:
+    So:
+        R_unknown = R_ref * (MAX - step) / step
+    """
+    if step <= 0:
         return float('inf')
 
-    raw_r = r_ref * step / (MCP4131_MAX_STEPS - step)
+    if step >= MCP4131_MAX_STEPS:
+        return 0.0
+
+    raw_r = r_ref * (MCP4131_MAX_STEPS - step) / step
     return raw_r * OHMS_CAL_FACTOR
 
 
@@ -84,8 +94,6 @@ def tolerance(step, r_ref=R_REF_OHMS):
         return float('inf')
 
     r_ext = step_to_resistance(step, r_ref)
-    denom = (MCP4131_MAX_STEPS - step) ** 2
-    quant_tol = 0.5 * r_ref * MCP4131_MAX_STEPS / denom
-    quant_tol *= OHMS_CAL_FACTOR
-    ref_tol = r_ext * R_REF_TOLERANCE_PCT
-    return math.sqrt(quant_tol ** 2 + ref_tol ** 2)
+
+    # Practical tolerance estimate
+    return max(0.05 * r_ext, 10.0)
