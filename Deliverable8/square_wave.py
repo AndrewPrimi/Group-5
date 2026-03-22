@@ -209,3 +209,58 @@ class SquareWaveGenerator:
     @property
     def last_w1(self):
         return self._last_w1
+
+    def test_swap_wipers(self, wait_seconds=10):
+    """
+    Standalone hardware test:
+      1) W0 = 50%, W1 = 100%
+      2) wait
+      3) swap
+      4) wait
+      5) both → 0
+    """
+        w50 = round(MAX_WIPER * 0.5)   # ~64
+        w100 = MAX_WIPER               # 127
+
+        if self._debug:
+            print("\n[TEST] Step 1: W0=50%, W1=100%")
+        self._write_wipers(w50, w100)
+
+        time.sleep(wait_seconds)
+
+        if self._debug:
+            print("\n[TEST] Step 2: W0=100%, W1=50%")
+        self._write_wipers(w100, w50)
+
+        time.sleep(wait_seconds)
+
+        if self._debug:
+            print("\n[TEST] Step 3: W0=0%, W1=0% (reset)")
+        self._write_wipers(0, 0)
+
+
+if __name__ == "__main__":
+    import pigpio
+
+    print("Running square_wave.py standalone test...")
+
+    pi = pigpio.pi()
+    if not pi.connected:
+        raise SystemExit("Run 'sudo pigpiod' first.")
+
+    # SPI setup (same as Driver.py)
+    spi = pi.spi_open(0, 50_000, 0)
+
+    gen = SquareWaveGenerator(pi, spi, debug=True)
+
+    try:
+        gen.test_swap_wipers(wait_seconds=10)
+
+    except KeyboardInterrupt:
+        print("\nTest interrupted.")
+
+    finally:
+        print("Cleaning up...")
+        gen.cleanup()
+        pi.spi_close(spi)
+        pi.stop()
