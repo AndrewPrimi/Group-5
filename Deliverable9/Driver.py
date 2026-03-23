@@ -1,46 +1,71 @@
 """
 Driver.py
 
-Integrated UI driver for:
-- Ohmmeter      (ohmmeter.py + ohms_steps.py)
-- Voltmeter     (sar_logic.py)
-- DC Reference  (dc_reference.py)
+Integrated LCD UI driver following this structure:
 
-Works with:
+Mode Select
+1. Function Generator
+2. Ohmmeter
+3. Voltmeter
+4. DC Reference
+5. Back
+6. Main
+
+Function Generator
+- Type
+- Frequency
+- Amplitude
+- Output
+- Back
+- Main
+
+Voltmeter
+- Source
+- Back
+- Main
+
+DC Reference
+- Voltage Value Input
+- Output
+- Back
+- Main
+
+This version integrates:
 - i2c_lcd.py
-- rotary_encoder.py
-- callbacks.py
+- rotary_encoder.py (through callbacks.py)
+- ohmmeter.py
+- ohms_steps.py
+- dc_reference.py
+- sar_logic.py
+
+It also keeps a placeholder function-generator branch so the UI tree
+matches your required structure even if the waveform path is still being
+finished.
 """
 
 import time
 import pigpio
 
 import i2c_lcd
-import rotary_encoder
 
 from callbacks import (
     PIN_A,
     PIN_B,
     ROTARY_BTN_PIN,
     setup_callbacks,
+    pick_menu,
+    adjust_value,
+    wait_for_back_page,
     clear_callbacks,
-    show_main_menu,
-    show_dc_reference_page,
-    menu_direction_callback,
-    menu_button_callback,
-    ohm_button_callback,
-    volt_button_callback,
-    dc_ref_direction_callback,
-    dc_ref_button_callback,
 )
 
 from ohmmeter import (
     open_adc,
     close_adc,
-    averaged_measure,
+    averaged_measure as ohm_averaged_measure,
     step_to_resistance,
-    tolerance,
-    COMPARATOR2_PIN,
+    tolerance as ohm_tolerance,
+    COMPARATOR2_PIN as OHM_COMPARATOR_PIN,
     MCP4131_MAX_STEPS,
 )
 
@@ -51,29 +76,46 @@ from ohms_steps import (
     fix_ohms,
 )
 
-from sar_logic import SAR_ADC
 from dc_reference import DCReferenceGenerator
+from sar_logic import SAR_ADC
+
+# Optional function generator integration
+try:
+    from square_wave import (
+        SquareWaveGenerator,
+        MIN_FREQ,
+        MAX_FREQ,
+        FREQ_STEP,
+        MAX_AMP,
+    )
+    HAVE_SQUARE_WAVE = True
+except Exception:
+    SquareWaveGenerator = None
+    MIN_FREQ = 100
+    MAX_FREQ = 10000
+    FREQ_STEP = 10
+    MAX_AMP = 10.0
+    HAVE_SQUARE_WAVE = False
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Hardware / system constants
+# Hardware constants
 # ─────────────────────────────────────────────────────────────────────────────
 
-MEASURE_INTERVAL = 0.5
+MEASURE_INTERVAL = 0.4
 
-# Separate SPI handle for MCP4231 bipolar DC reference
+# CE1 used by open_adc() for measurement-side digipot / SAR path
+# CE0 used separately for bipolar DC reference
 DCREF_SPI_CHANNEL = 0
 DCREF_SPI_SPEED = 50_000
 DCREF_SPI_FLAGS = 0
 
-# Comparator pin for voltmeter SAR logic
 VOLT_COMPARATOR_PIN = 23
-
-# SAR voltage reference used by read_voltage()
 VOLT_VREF = 5.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper formatting
+# Formatting helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fmt_ohms(value):
@@ -88,187 +130,381 @@ def fmt_volts(value):
     return f"{value:+.2f}V"
 
 
-def build_ohmmeter_lines(step):
-    """
-    Build LCD lines for ohmmeter page.
+def fmt_hz(value):
+    return f"{int(round(value))} Hz"
 
-    Uses:
-    - ohmmeter.py for actual calibrated resistance measurement
-    - ohms_steps.py for helper conversion / display integration
-    """
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Function generator wrappers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fg_apply_settings(state):
+    gen = state.get("fg_obj")
+    if gen is None:
+        return
+
+    freq = state["fg_frequency"]
+    amp = state["fg_amplitude"]
+
+    # Try common method names safely.
+    for method_name in ("set_frequency", "set_freq"):
+        method = getattr(gen, method_name, None)
+        if callable(method):
+            try:
+                method(freq)
+            except Exception:
+                pass
+            break
+
+    for method_name in ("set_amplitude", "set_amp"):
+        method = getattr(gen, method_name, None)
+        if callable(method):
+            try:
+                method(amp)
+            except Exception:
+                pass
+            break
+
+
+def fg_start(state):
+    gen = state.get("fg_obj")
+    if gen is None:
+        return
+    fg_apply_settings(state)
+    try:
+        gen.start()
+        state["fg_output_on"] = True
+    except Exception:
+        state["fg_output_on"] = False
+
+
+def fg_stop(state):
+    gen = state.get("fg_obj")
+    if gen is None:
+        state["fg_output_on"] = False
+        return
+    try:
+        gen.stop()
+    except Exception:
+        pass
+    state["fg_output_on"] = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ohmmeter helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_ohm_lines(pi, adc_handle):
+    step = ohm_averaged_measure(pi, adc_handle, OHM_COMPARATOR_PIN, n=11)
+
     if step <= 0:
         return (
             "Ohmmeter",
-            "Open circuit",
-            "Step: 0",
-            "Btn: back",
+            "Reading: Open",
+            "Threshold: ---",
+            "Btn: Back",
         )
 
     if step >= MCP4131_MAX_STEPS:
         return (
             "Ohmmeter",
-            "Short circuit",
-            f"Step: {step}",
-            "Btn: back",
+            "Reading: Short",
+            "Threshold: ---",
+            "Btn: Back",
         )
 
     measured = step_to_resistance(step)
-    tol = tolerance(step)
+    tol = ohm_tolerance(step)
 
-    # Map 5-bit SAR step (0..31) to 7-bit code (0..127) so ohms_steps.py
-    # is integrated into the display meaningfully.
     mapped_code = round(step * 127 / MCP4131_MAX_STEPS)
     approx_pot_ohms = fix_ohms(step_to_ohms(mapped_code))
 
     if measured < MINIMUM_OHMS:
-        status = "Below range"
+        threshold = f"Below {MINIMUM_OHMS} ohm"
     elif measured > MAXIMUM_OHMS:
-        status = "Above range"
+        threshold = f"Above {MAXIMUM_OHMS//1000}0k ohm"
     else:
-        status = f"+/- {fmt_ohms(tol)}"
-
-    line1 = f"R: {fmt_ohms(measured)}"
-    line2 = status
-    line3 = f"S:{step:02d} P:{fmt_ohms(approx_pot_ohms)}"
+        threshold = f"+/- {fmt_ohms(tol)}"
 
     return (
         "Ohmmeter",
-        line1[:20],
-        line2[:20],
-        line3[:20],
+        f"R: {fmt_ohms(measured)}",
+        threshold[:20],
+        f"S:{step:02d} P:{fmt_ohms(approx_pot_ohms)}"[:20],
     )
 
 
-def build_voltmeter_lines(voltage, step):
+# ─────────────────────────────────────────────────────────────────────────────
+# Voltmeter helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_volt_lines(state):
+    sar = state["sar_adc"]
+    voltage, step = sar.read_voltage(VOLT_VREF)
+    source = state.get("volt_source_label", "External")
+
     return (
         "Voltmeter",
-        f"Vin: {fmt_volts(voltage)}"[:20],
-        f"Step: {step:03d}"[:20],
-        "Btn: back",
+        f"Src: {source}"[:20],
+        f"Vin: {fmt_volts(voltage)}  S:{step}"[:20],
+        "Thr: +/-0.15 V",
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Page runners
+# DC reference helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_main_menu(state, pi, lcd):
-    state["isMainPage"] = True
-    state["menu_selection"] = 0
-    state["button_last_tick"] = None
-
-    clear_callbacks(state)
-    show_main_menu()
-
-    decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
-    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)
-
-    state["active_callbacks"] = [decoder, cb_btn]
-
-    while state["isMainPage"]:
-        time.sleep(0.05)
-
-    clear_callbacks(state)
-    return state.get("selected_mode", 0)
+def dc_apply_voltage(state):
+    dc_ref = state.get("dc_ref_obj")
+    if dc_ref is None:
+        return
+    dc_ref.set_voltage(state["dc_voltage"])
 
 
-def run_ohmmeter(state, pi, lcd, adc_handle):
-    state["isOhmPage"] = True
-    state["button_last_tick"] = None
-
-    clear_callbacks(state)
-
-    lcd.put_line(0, "Ohmmeter")
-    lcd.put_line(1, "Measuring...")
-    lcd.put_line(2, "")
-    lcd.put_line(3, "Btn: back")
-
-    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, ohm_button_callback)
-    state["active_callbacks"] = [cb_btn]
-
-    last_update = 0.0
-
-    while state["isOhmPage"]:
-        now = time.time()
-        if now - last_update >= MEASURE_INTERVAL:
-            last_update = now
-
-            step = averaged_measure(pi, adc_handle, COMPARATOR2_PIN, n=11)
-            l0, l1, l2, l3 = build_ohmmeter_lines(step)
-
-            lcd.put_line(0, l0)
-            lcd.put_line(1, l1)
-            lcd.put_line(2, l2)
-            lcd.put_line(3, l3)
-
-            print(f"[Ohmmeter] step={step:02d} | {l1.strip()} | {l2.strip()} | {l3.strip()}")
-
-        time.sleep(0.05)
-
-    clear_callbacks(state)
-
-
-def run_voltmeter(state, pi, lcd, sar_adc):
-    state["isVoltPage"] = True
-    state["button_last_tick"] = None
-
-    clear_callbacks(state)
-
-    lcd.put_line(0, "Voltmeter")
-    lcd.put_line(1, "Measuring...")
-    lcd.put_line(2, "")
-    lcd.put_line(3, "Btn: back")
-
-    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, volt_button_callback)
-    state["active_callbacks"] = [cb_btn]
-
-    last_update = 0.0
-
-    while state["isVoltPage"]:
-        now = time.time()
-        if now - last_update >= MEASURE_INTERVAL:
-            last_update = now
-
-            voltage, step = sar_adc.read_voltage(VOLT_VREF)
-            l0, l1, l2, l3 = build_voltmeter_lines(voltage, step)
-
-            lcd.put_line(0, l0)
-            lcd.put_line(1, l1)
-            lcd.put_line(2, l2)
-            lcd.put_line(3, l3)
-
-            print(f"[Voltmeter] voltage={voltage:+.3f} V | step={step}")
-
-        time.sleep(0.05)
-
-    clear_callbacks(state)
-
-
-def run_dc_reference(state, pi, lcd, dc_ref):
-    state["isDCRefPage"] = True
-    state["button_last_tick"] = None
-    state["dc_ref_obj"] = dc_ref
-    state["dc_ref_enabled"] = True
-
-    clear_callbacks(state)
-
-    # Start output at current stored voltage
+def dc_start(state):
+    dc_ref = state.get("dc_ref_obj")
+    if dc_ref is None:
+        return
+    dc_ref.set_voltage(state["dc_voltage"])
     dc_ref.start()
-    show_dc_reference_page()
+    state["dc_output_on"] = True
 
-    decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, dc_ref_direction_callback)
-    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, dc_ref_button_callback)
 
-    state["active_callbacks"] = [decoder, cb_btn]
-
-    while state["isDCRefPage"]:
-        time.sleep(0.05)
-
-    clear_callbacks(state)
-
-    # Return safely to 0 V when exiting page
-    state["dc_ref_enabled"] = False
+def dc_stop(state):
+    dc_ref = state.get("dc_ref_obj")
+    if dc_ref is None:
+        state["dc_output_on"] = False
+        return
     dc_ref.stop()
+    state["dc_output_on"] = False
+
+
+def build_dc_output_lines(state):
+    # Use the voltmeter SAR path to display generated output, per your requirement.
+    sar = state["sar_adc"]
+    voltage, step = sar.read_voltage(VOLT_VREF)
+
+    return (
+        "DC Ref Output",
+        f"Set: {fmt_volts(state['dc_voltage'])}"[:20],
+        f"Read:{fmt_volts(voltage)}"[:20],
+        f"Step:{step} Btn:Back"[:20],
+    )
+
+
+def build_fg_output_lines(state):
+    return (
+        "Function Output",
+        f"Type: {state['fg_type']}"[:20],
+        f"F:{fmt_hz(state['fg_frequency'])}"[:20],
+        f"A:{state['fg_amplitude']:.1f}V Btn"[:20],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Menus
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_function_generator_menu(state):
+    while True:
+        choice = pick_menu(
+            "Function Generator",
+            ["Type", "Frequency", "Amplitude", "Output", "Back", "Main"],
+        )
+
+        if choice == "Type":
+            result = pick_menu("Type", ["Square", "Back", "Main"])
+            if result == "Square":
+                state["fg_type"] = "Square"
+            elif result == "Main":
+                fg_stop(state)
+                return "MAIN"
+
+        elif choice == "Frequency":
+            result = pick_menu("Frequency", ["Input Frequency", "Back", "Main"])
+            if result == "Input Frequency":
+                new_val = adjust_value(
+                    "Input Frequency",
+                    state["fg_frequency"],
+                    MIN_FREQ,
+                    MAX_FREQ,
+                    FREQ_STEP,
+                    fmt_hz,
+                )
+                if new_val is not None:
+                    state["fg_frequency"] = int(new_val)
+                    fg_apply_settings(state)
+            elif result == "Main":
+                fg_stop(state)
+                return "MAIN"
+
+        elif choice == "Amplitude":
+            result = pick_menu("Amplitude", ["Input Amplitude", "Back", "Main"])
+            if result == "Input Amplitude":
+                new_val = adjust_value(
+                    "Input Amplitude",
+                    state["fg_amplitude"],
+                    0.0,
+                    MAX_AMP,
+                    0.1,
+                    lambda v: f"{v:.1f} V",
+                )
+                if new_val is not None:
+                    state["fg_amplitude"] = float(new_val)
+                    fg_apply_settings(state)
+            elif result == "Main":
+                fg_stop(state)
+                return "MAIN"
+
+        elif choice == "Output":
+            out_choice = pick_menu("FG Output", ["On", "Off", "Back", "Main"])
+
+            if out_choice == "On":
+                fg_start(state)
+                wait_for_back_page(lambda: build_fg_output_lines(state), refresh_s=0.25)
+                # per your requirement, leaving the live output page turns it off by default
+                fg_stop(state)
+
+            elif out_choice == "Off":
+                fg_stop(state)
+
+            elif out_choice == "Main":
+                fg_stop(state)
+                return "MAIN"
+
+        elif choice == "Back":
+            fg_stop(state)
+            return "BACK"
+
+        elif choice == "Main":
+            fg_stop(state)
+            return "MAIN"
+
+
+def run_ohmmeter_menu(state, pi, adc_handle):
+    while True:
+        choice = pick_menu("Ohmmeter", ["Back", "Main"])
+
+        if choice == "Back":
+            # Show live reading first, then go back one level
+            wait_for_back_page(lambda: build_ohm_lines(pi, adc_handle), refresh_s=MEASURE_INTERVAL)
+            return "BACK"
+
+        elif choice == "Main":
+            wait_for_back_page(lambda: build_ohm_lines(pi, adc_handle), refresh_s=MEASURE_INTERVAL)
+            return "MAIN"
+
+
+def run_ohmmeter_live(state, pi, adc_handle):
+    wait_for_back_page(lambda: build_ohm_lines(pi, adc_handle), refresh_s=MEASURE_INTERVAL)
+
+
+def run_voltmeter_menu(state):
+    while True:
+        choice = pick_menu("Voltmeter", ["Source", "Back", "Main"])
+
+        if choice == "Source":
+            src = pick_menu("Source", ["External", "Internal Ref", "Back", "Main"])
+
+            if src == "External":
+                state["volt_source_label"] = "External"
+                wait_for_back_page(lambda: build_volt_lines(state), refresh_s=MEASURE_INTERVAL)
+
+            elif src == "Internal Ref":
+                state["volt_source_label"] = "Int Ref"
+                result = run_dc_reference_menu(state, from_voltmeter=True)
+                if result == "MAIN":
+                    return "MAIN"
+
+            elif src == "Main":
+                return "MAIN"
+
+        elif choice == "Back":
+            return "BACK"
+
+        elif choice == "Main":
+            return "MAIN"
+
+
+def run_dc_reference_menu(state, from_voltmeter=False):
+    while True:
+        choice = pick_menu(
+            "DC Reference",
+            ["Voltage Input", "Output", "Back", "Main"],
+        )
+
+        if choice == "Voltage Input":
+            new_val = adjust_value(
+                "Voltage Value Input",
+                state["dc_voltage"],
+                -5.0,
+                5.0,
+                0.1,
+                lambda v: f"{v:+.1f} V",
+            )
+            if new_val is not None:
+                state["dc_voltage"] = float(new_val)
+                dc_apply_voltage(state)
+
+        elif choice == "Output":
+            out_choice = pick_menu("DC Output", ["On", "Off", "Back", "Main"])
+
+            if out_choice == "On":
+                dc_start(state)
+                wait_for_back_page(lambda: build_dc_output_lines(state), refresh_s=MEASURE_INTERVAL)
+                # per your requirement, backing out turns it off by default
+                dc_stop(state)
+
+            elif out_choice == "Off":
+                dc_stop(state)
+
+            elif out_choice == "Main":
+                dc_stop(state)
+                return "MAIN"
+
+        elif choice == "Back":
+            dc_stop(state)
+            return "BACK"
+
+        elif choice == "Main":
+            dc_stop(state)
+            return "MAIN"
+
+
+def run_main_menu(state, pi, adc_handle):
+    while True:
+        choice = pick_menu(
+            "Mode Select",
+            ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
+        )
+
+        if choice == "Function Generator":
+            result = run_function_generator_menu(state)
+            if result == "MAIN":
+                continue
+
+        elif choice == "Ohmmeter":
+            # direct live reading matches your note that UI shows reading and threshold
+            run_ohmmeter_live(state, pi, adc_handle)
+
+        elif choice == "Voltmeter":
+            result = run_voltmeter_menu(state)
+            if result == "MAIN":
+                continue
+
+        elif choice == "DC Reference":
+            result = run_dc_reference_menu(state)
+            if result == "MAIN":
+                continue
+
+        elif choice == "Back":
+            fg_stop(state)
+            dc_stop(state)
+
+        elif choice == "Main":
+            fg_stop(state)
+            dc_stop(state)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -286,13 +522,9 @@ def main():
     dc_spi_handle = None
 
     try:
-        # LCD
         lcd = i2c_lcd.lcd(pi, width=20)
 
-        # Shared measurement SPI handle from ohmmeter.py (CE1)
         adc_handle = open_adc(pi)
-
-        # Separate SPI handle for bipolar DC reference (CE0)
         dc_spi_handle = pi.spi_open(DCREF_SPI_CHANNEL, DCREF_SPI_SPEED, DCREF_SPI_FLAGS)
 
         # GPIO setup
@@ -304,7 +536,6 @@ def main():
         pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
         pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
-        # Voltmeter comparator input
         pi.set_mode(VOLT_COMPARATOR_PIN, pigpio.INPUT)
         pi.set_pull_up_down(VOLT_COMPARATOR_PIN, pigpio.PUD_OFF)
 
@@ -324,43 +555,55 @@ def main():
             settle_time=0.001,
         )
 
+        fg_obj = None
+        if HAVE_SQUARE_WAVE and SquareWaveGenerator is not None:
+            try:
+                # If your constructor differs, adjust here.
+                fg_obj = SquareWaveGenerator(pi)
+            except Exception:
+                fg_obj = None
+
         state = {
-            "menu_selection": 0,
-            "selected_mode": 0,
             "active_callbacks": [],
             "button_last_tick": None,
+            "button_press_tick": None,
+            "button_pressed": False,
+            "button_held": False,
+            "encoder_delta": 0,
 
-            "isMainPage": True,
-            "isOhmPage": False,
-            "isVoltPage": False,
-            "isDCRefPage": False,
+            "fg_type": "Square",
+            "fg_frequency": 1000,
+            "fg_amplitude": 0.0,
+            "fg_output_on": False,
+            "fg_obj": fg_obj,
 
-            "dc_ref_voltage": 0.0,
-            "dc_ref_step_size": 0.1,
-            "dc_ref_enabled": False,
-            "dc_ref_obj": None,
+            "dc_voltage": 0.0,
+            "dc_output_on": False,
+            "dc_ref_obj": dc_ref,
+
+            "volt_source_label": "External",
+            "sar_adc": sar_adc,
         }
 
         setup_callbacks(state, pi, lcd)
 
         print("Starting integrated driver...")
-
-        while True:
-            mode = run_main_menu(state, pi, lcd)
-
-            if mode == 0:
-                run_ohmmeter(state, pi, lcd, adc_handle)
-
-            elif mode == 1:
-                run_voltmeter(state, pi, lcd, sar_adc)
-
-            elif mode == 2:
-                run_dc_reference(state, pi, lcd, dc_ref)
+        run_main_menu(state, pi, adc_handle)
 
     except KeyboardInterrupt:
         print("\nStopping program...")
 
     finally:
+        try:
+            fg_stop(state)  # safe if state exists
+        except Exception:
+            pass
+
+        try:
+            dc_stop(state)
+        except Exception:
+            pass
+
         clear_callbacks()
 
         if lcd is not None:
