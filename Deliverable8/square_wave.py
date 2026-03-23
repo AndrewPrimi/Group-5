@@ -39,19 +39,15 @@ def _display_amp_to_steps(display_amp):
     """
     Convert amplitude in Vpp to wiper positions.
 
-    W0 and W1 sweep in opposite directions so their differential changes the
-    output amplitude. If both wipers move together, the circuit effect cancels
-    and amplitude stays flat — the opposite sweep is required by the hardware.
-
-    0.0 Vpp  -> W0=127, W1=0   (one extreme)
-    10.0 Vpp -> W0=0,   W1=127 (opposite extreme)
+    Both wipers scale together (0 -> 127) as amplitude increases.
+    POB=PWM, POA=GND means each wiper is a voltage divider — both must
+    move in the same direction to increase the output level.
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
 
-    w0 = int(_clamp(round(_lerp(127, 0, t)), 0, MAX_WIPER))
-    w1 = int(_clamp(round(_lerp(0, 127, t)), 0, MAX_WIPER))
-    return w0, w1
+    w = int(_clamp(round(_lerp(0, 127, t)), 0, MAX_WIPER))
+    return w, w
 
 
 class SquareWaveGenerator:
