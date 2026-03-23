@@ -74,7 +74,6 @@ from ohms_steps import (
     MAXIMUM_OHMS,
     ohms_to_step,
     step_to_ohms,
-    fix_ohms,
 )
 
 from dc_reference import DCReferenceGenerator
