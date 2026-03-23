@@ -7,22 +7,22 @@ MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
 
-# User-facing amplitude in V (not peak-to-peak). Range 0 to 10.
 MAX_AMP = 10.0
 
+# MCP42X1 command bytes
 CMD_W0 = 0x00
 CMD_W1 = 0x10
 
-#CMD_W0 = 0x10
-#CMD_W1 = 0x00
 MAX_WIPER = 127
 
-# These are intentionally broad so amplitude clearly changes again.
-# You can tune them later once the scope confirms motion.
-W0_MIN = 0
-W0_MAX = 127
-W1_MIN = 0
-W1_MAX = 127
+# Choose one mapping style for testing.
+# "same"     -> both wipers move together
+# "opposite" -> one rises while the other falls
+# "fixed_w1" -> W1 held at max, W0 varies
+# "fixed_w0" -> W0 held at max, W1 varies
+AMP_MODE = "opposite"
+
+SETTLE_TIME = 0.01
 
 
 def _clamp(value, low, high):
@@ -33,31 +33,49 @@ def _lerp(a, b, t):
     return a + (b - a) * t
 
 
-def _display_amp_to_steps(display_amp):
+def _amp_to_wipers(display_amp):
     """
-    Convert amplitude in V to wiper positions.
+    Convert user amplitude (0..10 V) into digipot wiper steps.
 
-    Both wipers scale together 0->127. POW0 feeds a non-inverting amp and
-    POW1 feeds a separate inverting amp — both must increase together for
-    the combined amplitude to increase. Opposite sweep cancels to constant.
-    0 V -> W0=W1=0 (no output, correct). Set amplitude > 0 to see signal.
+    This does not drive PB terminals from GPIO.
+    GPIO 13 only generates PWM.
+    The digipot only sets resistance / control points.
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
 
-    w = int(_clamp(round(_lerp(0, 127, t)), 0, MAX_WIPER))
-    return w, w
+    if AMP_MODE == "same":
+        w = int(round(_lerp(0, 127, t)))
+        return w, w
+
+    if AMP_MODE == "opposite":
+        w0 = int(round(_lerp(0, 127, t)))
+        w1 = int(round(_lerp(127, 0, t)))
+        return w0, w1
+
+    if AMP_MODE == "fixed_w1":
+        w0 = int(round(_lerp(0, 127, t)))
+        w1 = 127
+        return w0, w1
+
+    if AMP_MODE == "fixed_w0":
+        w0 = 127
+        w1 = int(round(_lerp(0, 127, t)))
+        return w0, w1
+
+    # safe fallback
+    return 0, 0
 
 
 class SquareWaveGenerator:
-    def __init__(self, pi, spi_handle, settle_time=0.01, debug=True):
+    def __init__(self, pi, spi_handle, settle_time=SETTLE_TIME, debug=True):
         self._pi = pi
         self._spi = spi_handle
         self._settle = settle_time
         self._debug = debug
 
         self._frequency = MIN_FREQ
-        self._amplitude = 0.0   # V
+        self._amplitude = 0.0
         self._running = False
 
         self._last_w0 = None
@@ -67,32 +85,25 @@ class SquareWaveGenerator:
         w0 = int(_clamp(w0, 0, MAX_WIPER))
         w1 = int(_clamp(w1, 0, MAX_WIPER))
 
-        r0 = self._pi.spi_write(self._spi, [CMD_W0, w0])
+        self._pi.spi_write(self._spi, [CMD_W0, w0])
         time.sleep(self._settle)
 
-        r1 = self._pi.spi_write(self._spi, [CMD_W1, w1])
+        self._pi.spi_write(self._spi, [CMD_W1, w1])
         time.sleep(self._settle)
-
-        # Read back W0 to verify chip received the write
-        _, rx = self._pi.spi_xfer(self._spi, [0x0C, 0x00])
-        readback_w0 = rx[1] & 0x7F
 
         self._last_w0 = w0
         self._last_w1 = w1
 
         if self._debug:
-            print(f"[SquareWave] spi_write r0={r0} r1={r1}")
-            print(f"[SquareWave] wrote W0={w0}, W1={w1}  readback_W0={readback_w0}")
+            print(f"[SquareWave] wrote W0={w0}, W1={w1}")
 
     def _write_amplitude(self, display_amp):
-        w0, w1 = _display_amp_to_steps(display_amp)
-
+        w0, w1 = _amp_to_wipers(display_amp)
         if self._debug:
             print(
-                f"[SquareWave] requested={display_amp:.2f} V  "
-                f"W0={w0}  W1={w1}"
+                f"[SquareWave] amplitude={display_amp:.2f} V  "
+                f"mode={AMP_MODE}  W0={w0}  W1={w1}"
             )
-
         self._write_wipers(w0, w1)
 
     def set_frequency(self, frequency: int):
@@ -145,9 +156,6 @@ class SquareWaveGenerator:
         return self._last_w1
 
     def test_amplitude_ramp(self, frequency=1000, wait_seconds=4):
-        """
-        Ramp amplitude in Vpp so you can verify movement on the scope.
-        """
         if self._debug:
             print(f"\n[TEST] Starting amplitude ramp at {frequency} Hz")
 
@@ -156,16 +164,13 @@ class SquareWaveGenerator:
 
         try:
             for amp in [0, 2, 4, 6, 8, 10, 0]:
-                print(f"[TEST] amplitude -> {amp} Vpp")
+                print(f"[TEST] amplitude -> {amp} V")
                 self.set_amplitude(amp)
                 time.sleep(wait_seconds)
         finally:
             self.stop()
 
     def test_raw_wiper_sweep(self, frequency=1000, wait_seconds=4):
-        """
-        Raw hardware test to prove the digipot is still changing.
-        """
         if self._debug:
             print(f"\n[TEST] Starting raw wiper sweep at {frequency} Hz")
 
@@ -175,11 +180,13 @@ class SquareWaveGenerator:
 
         try:
             tests = [
-                (127, 0),
-                (96, 32),
+                (0, 0),
+                (32, 32),
                 (64, 64),
-                (32, 96),
+                (96, 96),
+                (127, 127),
                 (0, 127),
+                (127, 0),
             ]
 
             for w0, w1 in tests:
@@ -203,10 +210,7 @@ if __name__ == "__main__":
     gen = SquareWaveGenerator(pi, spi, debug=True)
 
     try:
-        # First prove the pots move:
         gen.test_raw_wiper_sweep(frequency=1000, wait_seconds=5)
-
-        # Then test amplitude mapping:
         gen.test_amplitude_ramp(frequency=1000, wait_seconds=5)
 
     except KeyboardInterrupt:
