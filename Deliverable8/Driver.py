@@ -12,13 +12,13 @@ Menu structure:
   Main
   ├── Type      (Square only)
   ├── Frequency (rotary adjust, 100–10000 Hz, 10 Hz steps)
-  ├── Amplitude (rotary adjust, 0.0–10.0 V, 0.1 V steps)
+  ├── Amplitude (rotary adjust, 0.0–10.0 Vpp, 0.1 V steps)
   ├── Output
   │     On   → live display (hold 2 s to return)
   │     Off
   │     Back (turns output OFF)
   └── DC Reference
-        Voltage  (rotary adjust, 0.0–5.0 V, 0.1 V steps)
+        Voltage  (rotary adjust, -5.0–5.0 V, 0.625 V steps)
         Output
           On   → live display w/ voltmeter (hold 2 s or Back/Main turns OFF)
           Off
@@ -88,10 +88,11 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
+# ── Shared state ──────────────────────────────────────────────────────────────
 state = {
     'wave_type': 'Square',
     'frequency': 1000,
-    'amplitude': 0.0,
+    'amplitude': 0.0,      # stored as Vpp
     'output_on': False,
     'dc_voltage': 0.0,
     'dc_output_on': False,
@@ -151,7 +152,6 @@ def pick_menu(title, options):
     def _redraw():
         window = max(0, min(idx - 1, len(options) - 3))
         lcd.put_line(0, title[:20])
-
         for row in range(3):
             i = window + row
             if i < len(options):
@@ -253,7 +253,7 @@ def run_frequency_menu():
 def run_amplitude_menu():
     while True:
         choice = pick_menu(
-            f"AMP: +/-{state['amplitude']:.1f}V",
+            f"AMP: {state['amplitude']:.1f} Vpp",
             ['Adjust', 'Back'],
         )
         if choice == 'Adjust':
@@ -261,12 +261,12 @@ def run_amplitude_menu():
                 'AMPLITUDE',
                 state['amplitude'],
                 0.0, MAX_AMP, AMP_STEP,
-                lambda v: f"+/- {v:.1f} V",
+                lambda v: f"{v:.1f} Vpp",
             )
             if new_val is not None:
                 state['amplitude'] = round(new_val, 1)
                 gen.set_amplitude(state['amplitude'])
-                print(f"[Driver] amplitude set to {state['amplitude']:.1f} V")
+                print(f"[Driver] amplitude set to {state['amplitude']:.1f} Vpp")
         elif choice == 'Back':
             return
 
@@ -276,10 +276,12 @@ def run_live_display():
 
     def _redraw():
         period_ms = 1000.0 / state['frequency']
-        pk_pk = 2 * state['amplitude']
+        vpp = state['amplitude']
+        vpeak = vpp / 2.0
+
         lcd.put_line(0, f"LIVE OUT  {state['frequency']}Hz")
-        lcd.put_line(1, f"Amp:+/-{state['amplitude']:.1f}V")
-        lcd.put_line(2, f"PkPk:{pk_pk:.1f}V T:{period_ms:.2f}ms")
+        lcd.put_line(1, f"Amp:{vpp:.1f}Vpp +/-{vpeak:.1f}")
+        lcd.put_line(2, f"T:{period_ms:.2f}ms  DC:50%")
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
