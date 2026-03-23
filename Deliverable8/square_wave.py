@@ -67,17 +67,22 @@ class SquareWaveGenerator:
         w0 = int(_clamp(w0, 0, MAX_WIPER))
         w1 = int(_clamp(w1, 0, MAX_WIPER))
 
-        self._pi.spi_write(self._spi, [CMD_W0, w0])
+        r0 = self._pi.spi_write(self._spi, [CMD_W0, w0])
         time.sleep(self._settle)
 
-        self._pi.spi_write(self._spi, [CMD_W1, w1])
+        r1 = self._pi.spi_write(self._spi, [CMD_W1, w1])
         time.sleep(self._settle)
+
+        # Read back W0 to verify chip received the write
+        _, rx = self._pi.spi_xfer(self._spi, [0x0C, 0x00])
+        readback_w0 = rx[1] & 0x7F
 
         self._last_w0 = w0
         self._last_w1 = w1
 
         if self._debug:
-            print(f"[SquareWave] wrote W0={w0}, W1={w1}")
+            print(f"[SquareWave] spi_write r0={r0} r1={r1}")
+            print(f"[SquareWave] wrote W0={w0}, W1={w1}  readback_W0={readback_w0}")
 
     def _write_amplitude(self, display_amp):
         w0, w1 = _display_amp_to_steps(display_amp)

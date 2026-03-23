@@ -44,6 +44,9 @@ if not pi.connected:
 
 lcd = i2c_lcd.lcd(pi, width=20)
 spi_dc = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
+print(f"[DEBUG] spi_dc handle = {spi_dc}")
+if spi_dc < 0:
+    raise SystemExit(f"spi_open failed with error {spi_dc}")
 gen = SquareWaveGenerator(pi, spi_dc, debug=True)
 gen.set_frequency(1000)
 gen.set_amplitude(0.0)
