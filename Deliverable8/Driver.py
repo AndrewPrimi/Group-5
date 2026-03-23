@@ -39,43 +39,45 @@ from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
 
 # ── GPIO pin assignments ──────────────────────────────────────────────────────
-PIN_A          = 22
-PIN_B          = 27
+PIN_A = 22
+PIN_B = 27
 ROTARY_BTN_PIN = 17
 
 # ── Timing ────────────────────────────────────────────────────────────────────
-DEBOUNCE_US = 200_000     # 200 ms  – ignore repeat presses
-HOLD_US     = 2_000_000   # 2 s     – hold to go back
+DEBOUNCE_US = 200_000
+HOLD_US = 2_000_000
 
-AMP_STEP = 0.1            # V per encoder click
+AMP_STEP = 0.1
 
 # ── DC Reference constants ────────────────────────────────────────────────────
-MIN_DC_VOLT  = -5.0
-MAX_DC_VOLT  =  5.0
-DC_VOLT_STEP =  0.625
+MIN_DC_VOLT = -5.0
+MAX_DC_VOLT = 5.0
+DC_VOLT_STEP = 0.625
 DC_SPI_CHANNEL = 0
-DC_SPI_SPEED   = 50_000
-DC_SPI_FLAGS   = 0
+DC_SPI_SPEED = 50_000
+DC_SPI_FLAGS = 0
 
 # ── Voltmeter (SAR ADC) constants ─────────────────────────────────────────────
 COMPARATOR_PIN = 24
-VREF           = 5.0
+VREF = 5.0
 VM_SPI_CHANNEL = 1
-VM_SPI_SPEED   = 50_000
-VM_SPI_FLAGS   = 0
+VM_SPI_SPEED = 50_000
+VM_SPI_FLAGS = 0
 
 # ── Initialise hardware ───────────────────────────────────────────────────────
 pi = pigpio.pi()
 if not pi.connected:
-    raise SystemExit("Cannot connect to pigpio daemon.  Run 'sudo pigpiod' first.")
+    raise SystemExit("Cannot connect to pigpio daemon. Run 'sudo pigpiod' first.")
 
-lcd       = i2c_lcd.lcd(pi, width=20)
-spi_dc    = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
-gen       = SquareWaveGenerator(pi, spi_dc, debug=True)
+lcd = i2c_lcd.lcd(pi, width=20)
+spi_dc = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
+gen = SquareWaveGenerator(pi, spi_dc, debug=True)
 gen.set_frequency(1000)
 gen.set_amplitude(0.0)
-dc_ref    = DCReferenceGenerator(pi, spi_dc)
-spi_vm    = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
+
+dc_ref = DCReferenceGenerator(pi, spi_dc)
+
+spi_vm = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
 voltmeter = SAR_ADC(pi, spi_vm, COMPARATOR_PIN)
 
 for pin in (PIN_A, PIN_B):
@@ -86,24 +88,21 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
-# ── Shared state ──────────────────────────────────────────────────────────────
 state = {
-    'wave_type':         'Square',
-    'frequency':         1000,
-    'amplitude':         0.0,
-    'output_on':         False,
-    'dc_voltage':        0.0,
-    'dc_output_on':      False,
-    'active_callbacks':  [],
-    'button_last_tick':  None,
+    'wave_type': 'Square',
+    'frequency': 1000,
+    'amplitude': 0.0,
+    'output_on': False,
+    'dc_voltage': 0.0,
+    'dc_output_on': False,
+    'active_callbacks': [],
+    'button_last_tick': None,
     'button_press_tick': None,
-    'button_pressed':    False,
-    'button_held':       False,
-    'encoder_delta':     0,
+    'button_pressed': False,
+    'button_held': False,
+    'encoder_delta': 0,
 }
 
-
-# ── Callback helpers ──────────────────────────────────────────────────────────
 
 def clear_callbacks():
     for cb in state['active_callbacks']:
@@ -112,17 +111,18 @@ def clear_callbacks():
 
 
 def _button_cb(gpio, level, tick):
-    if level == 0:                          # press (falling edge)
+    if level == 0:
         last = state['button_last_tick']
         if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
             return
-        state['button_last_tick']  = tick
+        state['button_last_tick'] = tick
         state['button_press_tick'] = tick
-    elif level == 1:                        # release (rising edge)
+
+    elif level == 1:
         press_tick = state['button_press_tick']
         if press_tick is not None:
             if pigpio.tickDiff(press_tick, tick) >= HOLD_US:
-                state['button_held']    = True
+                state['button_held'] = True
             else:
                 state['button_pressed'] = True
             state['button_press_tick'] = None
@@ -134,29 +134,24 @@ def _encoder_cb(direction):
 
 def _attach_callbacks():
     decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, _encoder_cb)
-    cb_btn  = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
     state['active_callbacks'] = [decoder, cb_btn]
 
 
 def _reset_input():
     state['button_pressed'] = False
-    state['button_held']    = False
-    state['encoder_delta']  = 0
+    state['button_held'] = False
+    state['encoder_delta'] = 0
 
-
-# ── Menu helper ───────────────────────────────────────────────────────────────
 
 def pick_menu(title, options):
-    """
-    Scrolling 3-item menu on the 20x4 LCD.
-    Returns the selected option string, or 'Back' on hold.
-    """
     idx = 0
     _reset_input()
 
     def _redraw():
         window = max(0, min(idx - 1, len(options) - 3))
         lcd.put_line(0, title[:20])
+
         for row in range(3):
             i = window + row
             if i < len(options):
@@ -187,13 +182,7 @@ def pick_menu(title, options):
         time.sleep(0.02)
 
 
-# ── Value adjuster ────────────────────────────────────────────────────────────
-
 def adjust_value(title, value, min_val, max_val, step, fmt):
-    """
-    Rotary-encoder value adjuster.
-    Returns the confirmed value, or None if the user held to cancel.
-    """
     _reset_input()
 
     def _redraw():
@@ -208,8 +197,8 @@ def adjust_value(title, value, min_val, max_val, step, fmt):
     while True:
         if state['encoder_delta'] != 0:
             value += state['encoder_delta'] * step
-            value  = max(min_val, min(max_val, value))
-            value  = round(round(value / step) * step, 10)
+            value = max(min_val, min(max_val, value))
+            value = round(round(value / step) * step, 10)
             state['encoder_delta'] = 0
             _redraw()
 
@@ -226,15 +215,15 @@ def adjust_value(title, value, min_val, max_val, step, fmt):
         time.sleep(0.02)
 
 
-# ── Page runners ──────────────────────────────────────────────────────────────
-
 def run_type_menu():
     while True:
         choice = pick_menu(f"TYPE: {state['wave_type']}", ['Square', 'Back'])
         if choice == 'Square':
             state['wave_type'] = 'Square'
             lcd.put_line(0, 'Type set: Square')
-            lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
+            lcd.put_line(1, '')
+            lcd.put_line(2, '')
+            lcd.put_line(3, '')
             time.sleep(0.8)
             return
         elif choice == 'Back':
@@ -283,15 +272,14 @@ def run_amplitude_menu():
 
 
 def run_live_display():
-    """Live readout while output is ON.  Hold button 2 s to return."""
     _reset_input()
 
     def _redraw():
         period_ms = 1000.0 / state['frequency']
-        pk_pk     = 2 * state['amplitude']
+        pk_pk = 2 * state['amplitude']
         lcd.put_line(0, f"LIVE OUT  {state['frequency']}Hz")
-        lcd.put_line(1, f"Amp:+/-{state['amplitude']:.1f}V Pk:{pk_pk:.1f}V")
-        lcd.put_line(2, f"T:{period_ms:.2f}ms  DC:50%")
+        lcd.put_line(1, f"Amp:+/-{state['amplitude']:.1f}V")
+        lcd.put_line(2, f"PkPk:{pk_pk:.1f}V T:{period_ms:.2f}ms")
         lcd.put_line(3, 'Hold btn: back')
 
     _redraw()
@@ -333,7 +321,6 @@ def run_output_menu():
 
 
 def run_dc_live_display():
-    """Live DC output readout with voltmeter.  Hold button 2 s to return."""
     _reset_input()
 
     def _redraw():
@@ -382,10 +369,6 @@ def run_dc_voltage_menu():
 
 
 def run_dc_output_menu():
-    """
-    Returns True if the user chose 'Main' (caller should return to main menu),
-    False otherwise.
-    """
     while True:
         status = 'ON' if state['dc_output_on'] else 'OFF'
         choice = pick_menu(f"DC OUTPUT: {status}", ['On', 'Off', 'Back', 'Main'])
@@ -412,7 +395,6 @@ def run_dc_output_menu():
 
 
 def run_dc_reference_menu():
-    """Returns True if the user navigated directly to Main."""
     while True:
         choice = pick_menu('DC REFERENCE', ['Voltage', 'Output', 'Back'])
         if choice == 'Voltage':
@@ -450,11 +432,12 @@ def run_main_menu():
             if state['dc_output_on']:
                 dc_ref.stop()
             lcd.put_line(0, 'Goodbye!')
-            lcd.put_line(1, ''); lcd.put_line(2, ''); lcd.put_line(3, '')
+            lcd.put_line(1, '')
+            lcd.put_line(2, '')
+            lcd.put_line(3, '')
             return
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 print("Starting Deliverable 8 driver...")
 
 try:
@@ -466,6 +449,7 @@ finally:
         gen.stop()
     if state['dc_output_on']:
         dc_ref.stop()
+
     gen.cleanup()
     dc_ref.cleanup()
     pi.spi_close(spi_dc)
