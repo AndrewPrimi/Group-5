@@ -7,28 +7,34 @@ MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
 
-# User amplitude is Vpp:
-#   10.0 Vpp => +5 V to -5 V
-#    6.0 Vpp => +3 V to -3 V
+# Amplitude is Vpp:
+#   10.0 Vpp => ideally +5 V to -5 V
 MAX_AMP = 10.0
 
 CMD_W0 = 0x00
 CMD_W1 = 0x10
 MAX_WIPER = 127
 
-# ── Calibrated square-wave rail points ───────────────────────────────────────
-# These come from the DC-reference calibration trend and are used here as the
-# best available calibration for the square-wave bias/span control.
+# ── Calibrated points from your hardware trend ───────────────────────────────
+# From dc_reference calibration:
+#   +5 V  -> W0=127, W1=49
+#    0 V  -> W0=93,  W1=88
+#   -5 V  -> W0=59,  W1=127
 #
-# 0 V output center:
+# For square-wave amplitude centered at 0:
+#   positive rail side should move from 0 V toward +5 V
+#   negative rail side should move from 0 V toward -5 V
+#
+# Best working assumption:
+#   W0 controls the positive side: 93 -> 127
+#   W1 controls the negative side: 88 -> 49
+#
+# This restores amplitude motion while recentering around 0 V.
 ZERO_W0 = 93
 ZERO_W1 = 88
 
-# +5 V positive rail target
-POS5_W0 = 127
-
-# -5 V negative rail target
-NEG5_W1 = 127
+POS_FULL_W0 = 127   # toward +5 V side
+NEG_FULL_W1 = 49    # toward -5 V side
 
 
 def _clamp(value, low, high):
@@ -41,23 +47,20 @@ def _lerp(a, b, t):
 
 def _display_amp_to_steps(display_amp):
     """
-    Convert desired Vpp amplitude into calibrated wiper positions.
+    Convert desired Vpp amplitude into wiper positions.
 
-    Amplitude meaning:
-      0.0 Vpp  ->  0 V to 0 V
-      2.0 Vpp  -> +1 V to -1 V
-      10.0 Vpp -> +5 V to -5 V
+    0.0 Vpp  -> 0 V centered output
+    10.0 Vpp -> ideally +5 V / -5 V
 
-    Mapping idea:
-      - W0 controls the positive side from 0 V up to +5 V
-      - W1 controls the negative side from 0 V down to -5 V
+    Mapping:
+      W0 goes from ZERO_W0 toward POS_FULL_W0
+      W1 goes from ZERO_W1 toward NEG_FULL_W1
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
-    vpeak = display_amp / 2.0             # 10 Vpp -> 5 V peak
-    t = vpeak / 5.0                       # normalize 0..1
+    t = display_amp / MAX_AMP
 
-    w0 = round(_lerp(ZERO_W0, POS5_W0, t))
-    w1 = round(_lerp(ZERO_W1, NEG5_W1, t))
+    w0 = round(_lerp(ZERO_W0, POS_FULL_W0, t))
+    w1 = round(_lerp(ZERO_W1, NEG_FULL_W1, t))
 
     w0 = int(_clamp(w0, 0, MAX_WIPER))
     w1 = int(_clamp(w1, 0, MAX_WIPER))
@@ -134,7 +137,7 @@ class SquareWaveGenerator:
         self._running = False
         self._pi.hardware_PWM(PWM_GPIO, 0, 0)
 
-        # Return to calibrated 0 V center
+        # Return to centered 0 V position
         self._write_wipers(ZERO_W0, ZERO_W1)
 
         if self._debug:
@@ -159,12 +162,12 @@ class SquareWaveGenerator:
     def last_w1(self):
         return self._last_w1
 
-    def test_amplitude_ramp(self, frequency=1000, wait_seconds=5):
+    def test_amplitude_ramp(self, frequency=1000, wait_seconds=4):
         """
         0 Vpp -> 2 -> 4 -> 6 -> 8 -> 10 -> 0
         """
         if self._debug:
-            print(f"\n[TEST] Starting bipolar amplitude ramp at {frequency} Hz")
+            print(f"\n[TEST] Starting amplitude ramp at {frequency} Hz")
 
         self.set_frequency(frequency)
         self.start()
@@ -177,11 +180,51 @@ class SquareWaveGenerator:
         finally:
             self.stop()
 
+    def test_each_wiper(self, frequency=1000, wait_seconds=5):
+        """
+        Hardware diagnosis:
+          1) center
+          2) move W0 only
+          3) center
+          4) move W1 only
+          5) center
+        """
+        if self._debug:
+            print(f"\n[TEST] Starting single-wiper diagnostic at {frequency} Hz")
+
+        self.set_frequency(frequency)
+        self._pi.hardware_PWM(PWM_GPIO, self._frequency, DUTY)
+        self._running = True
+
+        try:
+            print("[TEST] Center")
+            self._write_wipers(ZERO_W0, ZERO_W1)
+            time.sleep(wait_seconds)
+
+            print("[TEST] Move W0 only to positive endpoint")
+            self._write_wipers(POS_FULL_W0, ZERO_W1)
+            time.sleep(wait_seconds)
+
+            print("[TEST] Back to center")
+            self._write_wipers(ZERO_W0, ZERO_W1)
+            time.sleep(wait_seconds)
+
+            print("[TEST] Move W1 only to negative endpoint")
+            self._write_wipers(ZERO_W0, NEG_FULL_W1)
+            time.sleep(wait_seconds)
+
+            print("[TEST] Back to center")
+            self._write_wipers(ZERO_W0, ZERO_W1)
+            time.sleep(wait_seconds)
+
+        finally:
+            self.stop()
+
 
 if __name__ == "__main__":
     import pigpio
 
-    print("Running square_wave.py standalone bipolar square-wave test...")
+    print("Running square_wave.py standalone square-wave test...")
 
     pi = pigpio.pi()
     if not pi.connected:
@@ -192,8 +235,13 @@ if __name__ == "__main__":
 
     try:
         gen.test_amplitude_ramp(frequency=1000, wait_seconds=5)
+
+        # For deeper diagnosis, comment the line above and use this instead:
+        # gen.test_each_wiper(frequency=1000, wait_seconds=5)
+
     except KeyboardInterrupt:
         print("\nTest interrupted.")
+
     finally:
         print("Cleaning up...")
         gen.cleanup()
