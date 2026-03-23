@@ -69,8 +69,8 @@ class SquareWaveGenerator:
         self._last_w1 = None
 
     def _write_wipers(self, w0, w1):
-        w1 = int(_clamp(w0, 0, MAX_WIPER))
-        w0 = int(_clamp(w1, 0, MAX_WIPER))
+        w0 = int(_clamp(w0, 0, MAX_WIPER))
+        w1 = int(_clamp(w1, 0, MAX_WIPER))
 
         self._pi.spi_write(self._spi, [CMD_W0, w0])
         time.sleep(self._settle)
