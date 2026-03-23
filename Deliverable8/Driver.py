@@ -44,8 +44,7 @@ if not pi.connected:
 
 lcd = i2c_lcd.lcd(pi, width=20)
 spi_dc = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
-spi_gen = pi.spi_open(0, 50_000, 0)
-gen = SquareWaveGenerator(pi, spi_gen, debug=True)
+gen = SquareWaveGenerator(pi, spi_dc, debug=True)
 gen.set_frequency(1000)
 gen.set_amplitude(0.0)
 
@@ -427,7 +426,6 @@ finally:
 
     gen.cleanup()
     dc_ref.cleanup()
-    pi.spi_close(spi_gen)
     pi.spi_close(spi_dc)
     pi.spi_close(spi_vm)
     clear_callbacks()
