@@ -7,34 +7,21 @@ MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
 
-# Amplitude is Vpp:
-#   10.0 Vpp => ideally +5 V to -5 V
+# User-facing amplitude is Vpp
+# Example:
+#   10.0 Vpp means the user wants a 10-volt peak-to-peak waveform
 MAX_AMP = 10.0
 
 CMD_W0 = 0x00
 CMD_W1 = 0x10
 MAX_WIPER = 127
 
-# ── Calibrated points from your hardware trend ───────────────────────────────
-# From dc_reference calibration:
-#   +5 V  -> W0=127, W1=49
-#    0 V  -> W0=93,  W1=88
-#   -5 V  -> W0=59,  W1=127
-#
-# For square-wave amplitude centered at 0:
-#   positive rail side should move from 0 V toward +5 V
-#   negative rail side should move from 0 V toward -5 V
-#
-# Best working assumption:
-#   W0 controls the positive side: 93 -> 127
-#   W1 controls the negative side: 88 -> 49
-#
-# This restores amplitude motion while recentering around 0 V.
-ZERO_W0 = 93
-ZERO_W1 = 88
-
-POS_FULL_W0 = 127   # toward +5 V side
-NEG_FULL_W1 = 49    # toward -5 V side
+# These are intentionally broad so amplitude clearly changes again.
+# You can tune them later once the scope confirms motion.
+W0_MIN = 0
+W0_MAX = 127
+W1_MIN = 0
+W1_MAX = 127
 
 
 def _clamp(value, low, high):
@@ -47,20 +34,20 @@ def _lerp(a, b, t):
 
 def _display_amp_to_steps(display_amp):
     """
-    Convert desired Vpp amplitude into wiper positions.
+    Convert amplitude in Vpp to wiper positions.
 
-    0.0 Vpp  -> 0 V centered output
-    10.0 Vpp -> ideally +5 V / -5 V
+    This version prioritizes making the amplitude visibly change again.
+    It drives the two pots in opposite directions across a large range.
 
-    Mapping:
-      W0 goes from ZERO_W0 toward POS_FULL_W0
-      W1 goes from ZERO_W1 toward NEG_FULL_W1
+    0.0 Vpp  -> center-ish control
+    10.0 Vpp -> full spread
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
 
-    w0 = round(_lerp(ZERO_W0, POS_FULL_W0, t))
-    w1 = round(_lerp(ZERO_W1, NEG_FULL_W1, t))
+    # Opposite-direction sweep
+    w0 = round(_lerp(127, 0, t))
+    w1 = round(_lerp(0, 127, t))
 
     w0 = int(_clamp(w0, 0, MAX_WIPER))
     w1 = int(_clamp(w1, 0, MAX_WIPER))
@@ -75,7 +62,7 @@ class SquareWaveGenerator:
         self._debug = debug
 
         self._frequency = MIN_FREQ
-        self._amplitude = 0.0   # stored as Vpp
+        self._amplitude = 0.0   # Vpp
         self._running = False
 
         self._last_w0 = None
@@ -101,10 +88,8 @@ class SquareWaveGenerator:
         w0, w1 = _display_amp_to_steps(display_amp)
 
         if self._debug:
-            vpeak = display_amp / 2.0
             print(
                 f"[SquareWave] requested={display_amp:.2f} Vpp  "
-                f"(ideal +{vpeak:.2f} / -{vpeak:.2f} V)  "
                 f"W0={w0}  W1={w1}"
             )
 
@@ -136,10 +121,7 @@ class SquareWaveGenerator:
     def stop(self):
         self._running = False
         self._pi.hardware_PWM(PWM_GPIO, 0, 0)
-
-        # Return to centered 0 V position
-        self._write_wipers(ZERO_W0, ZERO_W1)
-
+        self._write_wipers(0, 0)
         if self._debug:
             print("[SquareWave] stopped")
 
@@ -164,7 +146,7 @@ class SquareWaveGenerator:
 
     def test_amplitude_ramp(self, frequency=1000, wait_seconds=4):
         """
-        0 Vpp -> 2 -> 4 -> 6 -> 8 -> 10 -> 0
+        Ramp amplitude in Vpp so you can verify movement on the scope.
         """
         if self._debug:
             print(f"\n[TEST] Starting amplitude ramp at {frequency} Hz")
@@ -180,43 +162,30 @@ class SquareWaveGenerator:
         finally:
             self.stop()
 
-    def test_each_wiper(self, frequency=1000, wait_seconds=5):
+    def test_raw_wiper_sweep(self, frequency=1000, wait_seconds=4):
         """
-        Hardware diagnosis:
-          1) center
-          2) move W0 only
-          3) center
-          4) move W1 only
-          5) center
+        Raw hardware test to prove the digipot is still changing.
         """
         if self._debug:
-            print(f"\n[TEST] Starting single-wiper diagnostic at {frequency} Hz")
+            print(f"\n[TEST] Starting raw wiper sweep at {frequency} Hz")
 
         self.set_frequency(frequency)
         self._pi.hardware_PWM(PWM_GPIO, self._frequency, DUTY)
         self._running = True
 
         try:
-            print("[TEST] Center")
-            self._write_wipers(ZERO_W0, ZERO_W1)
-            time.sleep(wait_seconds)
+            tests = [
+                (127, 0),
+                (96, 32),
+                (64, 64),
+                (32, 96),
+                (0, 127),
+            ]
 
-            print("[TEST] Move W0 only to positive endpoint")
-            self._write_wipers(POS_FULL_W0, ZERO_W1)
-            time.sleep(wait_seconds)
-
-            print("[TEST] Back to center")
-            self._write_wipers(ZERO_W0, ZERO_W1)
-            time.sleep(wait_seconds)
-
-            print("[TEST] Move W1 only to negative endpoint")
-            self._write_wipers(ZERO_W0, NEG_FULL_W1)
-            time.sleep(wait_seconds)
-
-            print("[TEST] Back to center")
-            self._write_wipers(ZERO_W0, ZERO_W1)
-            time.sleep(wait_seconds)
-
+            for w0, w1 in tests:
+                print(f"[TEST] raw -> W0={w0}, W1={w1}")
+                self._write_wipers(w0, w1)
+                time.sleep(wait_seconds)
         finally:
             self.stop()
 
@@ -224,7 +193,7 @@ class SquareWaveGenerator:
 if __name__ == "__main__":
     import pigpio
 
-    print("Running square_wave.py standalone square-wave test...")
+    print("Running square_wave.py standalone test...")
 
     pi = pigpio.pi()
     if not pi.connected:
@@ -234,10 +203,11 @@ if __name__ == "__main__":
     gen = SquareWaveGenerator(pi, spi, debug=True)
 
     try:
-        gen.test_amplitude_ramp(frequency=1000, wait_seconds=5)
+        # First prove the pots move:
+        gen.test_raw_wiper_sweep(frequency=1000, wait_seconds=5)
 
-        # For deeper diagnosis, comment the line above and use this instead:
-        # gen.test_each_wiper(frequency=1000, wait_seconds=5)
+        # Then test amplitude mapping:
+        gen.test_amplitude_ramp(frequency=1000, wait_seconds=5)
 
     except KeyboardInterrupt:
         print("\nTest interrupted.")
