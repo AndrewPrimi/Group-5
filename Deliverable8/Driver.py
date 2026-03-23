@@ -225,7 +225,7 @@ def run_frequency_menu():
 def run_amplitude_menu():
     while True:
         choice = pick_menu(
-            f"AMP: {state['amplitude']:.1f} Vpp",
+            f"AMP: {state['amplitude']:.1f} V",
             ['Adjust', 'Back'],
         )
         if choice == 'Adjust':
@@ -233,12 +233,12 @@ def run_amplitude_menu():
                 'AMPLITUDE',
                 state['amplitude'],
                 0.0, MAX_AMP, AMP_STEP,
-                lambda v: f"{v:.1f} Vpp",
+                lambda v: f"{v:.1f} V",
             )
             if new_val is not None:
                 state['amplitude'] = round(new_val, 1)
                 gen.set_amplitude(state['amplitude'])
-                print(f"[Driver] amplitude set to {state['amplitude']:.1f} Vpp  W0={gen.last_w0}  W1={gen.last_w1}")
+                print(f"[Driver] amplitude set to {state['amplitude']:.1f} V  W0={gen.last_w0}  W1={gen.last_w1}")
         elif choice == 'Back':
             return
 
@@ -248,11 +248,10 @@ def run_live_display():
 
     def _redraw():
         period_ms = 1000.0 / state['frequency']
-        vpp = state['amplitude']
-        vpeak = vpp / 2.0
+        amp = state['amplitude']
 
         lcd.put_line(0, f"LIVE OUT  {state['frequency']}Hz")
-        lcd.put_line(1, f"Amp:{vpp:.1f}Vpp +/-{vpeak:.1f}")
+        lcd.put_line(1, f"Amp:{amp:.1f} V")
         lcd.put_line(2, f"T:{period_ms:.2f}ms  DC:50%")
         lcd.put_line(3, 'Hold btn: back')
 

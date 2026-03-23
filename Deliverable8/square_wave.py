@@ -7,9 +7,8 @@ MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
 
-# User-facing amplitude is Vpp
-# Hardware ceiling is ~5V due to 3.3V PWM input and TL084 op-amp gain.
-MAX_AMP = 5.0
+# User-facing amplitude in V (not peak-to-peak). Range 0 to 10.
+MAX_AMP = 10.0
 
 CMD_W0 = 0x00
 CMD_W1 = 0x10
@@ -36,12 +35,12 @@ def _lerp(a, b, t):
 
 def _display_amp_to_steps(display_amp):
     """
-    Convert amplitude in Vpp to wiper positions.
+    Convert amplitude in V to wiper positions.
 
     Both wipers scale together 0->127. POW0 feeds a non-inverting amp and
     POW1 feeds a separate inverting amp — both must increase together for
     the combined amplitude to increase. Opposite sweep cancels to constant.
-    0 Vpp -> W0=W1=0 (no output, correct). Set amplitude > 0 to see signal.
+    0 V -> W0=W1=0 (no output, correct). Set amplitude > 0 to see signal.
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
@@ -58,7 +57,7 @@ class SquareWaveGenerator:
         self._debug = debug
 
         self._frequency = MIN_FREQ
-        self._amplitude = 0.0   # Vpp
+        self._amplitude = 0.0   # V
         self._running = False
 
         self._last_w0 = None
@@ -85,7 +84,7 @@ class SquareWaveGenerator:
 
         if self._debug:
             print(
-                f"[SquareWave] requested={display_amp:.2f} Vpp  "
+                f"[SquareWave] requested={display_amp:.2f} V  "
                 f"W0={w0}  W1={w1}"
             )
 
