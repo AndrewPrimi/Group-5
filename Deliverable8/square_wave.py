@@ -8,9 +8,8 @@ MAX_FREQ = 10_000
 FREQ_STEP = 10
 
 # User-facing amplitude is Vpp
-# Example:
-#   10.0 Vpp means the user wants a 10-volt peak-to-peak waveform
-MAX_AMP = 10.0
+# Hardware ceiling is ~5V due to 3.3V PWM input and TL084 op-amp gain.
+MAX_AMP = 5.0
 
 CMD_W0 = 0x00
 CMD_W1 = 0x10
