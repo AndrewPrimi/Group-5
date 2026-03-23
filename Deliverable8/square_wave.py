@@ -7,28 +7,28 @@ MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
 
-# User amplitude setting is PEAK-TO-PEAK voltage.
-# Example:
-#   10.0 means +5 V to -5 V
-#    6.0 means +3 V to -3 V
-#    2.0 means +1 V to -1 V
-MAX_AMP = 10.0   # max Vpp
+# User amplitude is Vpp:
+#   10.0 Vpp => +5 V to -5 V
+#    6.0 Vpp => +3 V to -3 V
+MAX_AMP = 10.0
 
 CMD_W0 = 0x00
 CMD_W1 = 0x10
 MAX_WIPER = 127
 
-# ── Calibration points for bipolar square-wave amplitude ─────────────────────
-# These should represent:
-#   0 Vpp   -> centered around 0 V
-#   10 Vpp  -> +5 V / -5 V swing
+# ── Calibrated square-wave rail points ───────────────────────────────────────
+# These come from the DC-reference calibration trend and are used here as the
+# best available calibration for the square-wave bias/span control.
 #
-# Start with these values, then calibrate from scope measurements if needed.
-CENTER_W0 = 64
-CENTER_W1 = 64
+# 0 V output center:
+ZERO_W0 = 93
+ZERO_W1 = 88
 
-MINUS_FULL_W0 = 0
-PLUS_FULL_W1 = 127
+# +5 V positive rail target
+POS5_W0 = 127
+
+# -5 V negative rail target
+NEG5_W1 = 127
 
 
 def _clamp(value, low, high):
@@ -41,22 +41,23 @@ def _lerp(a, b, t):
 
 def _display_amp_to_steps(display_amp):
     """
-    Convert requested Vpp amplitude into wiper positions.
+    Convert desired Vpp amplitude into calibrated wiper positions.
 
-    display_amp:
-        0.0  -> 0 Vpp  -> 0 V centered output
-        10.0 -> 10 Vpp -> +5 V to -5 V output
+    Amplitude meaning:
+      0.0 Vpp  ->  0 V to 0 V
+      2.0 Vpp  -> +1 V to -1 V
+      10.0 Vpp -> +5 V to -5 V
 
-    The two wipers move outward symmetrically from the center position.
+    Mapping idea:
+      - W0 controls the positive side from 0 V up to +5 V
+      - W1 controls the negative side from 0 V down to -5 V
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
+    vpeak = display_amp / 2.0             # 10 Vpp -> 5 V peak
+    t = vpeak / 5.0                       # normalize 0..1
 
-    # Convert requested Vpp into normalized range 0..1
-    t = display_amp / MAX_AMP
-
-    # Move away from center symmetrically
-    w0 = round(_lerp(CENTER_W0, MINUS_FULL_W0, t))
-    w1 = round(_lerp(CENTER_W1, PLUS_FULL_W1, t))
+    w0 = round(_lerp(ZERO_W0, POS5_W0, t))
+    w1 = round(_lerp(ZERO_W1, NEG5_W1, t))
 
     w0 = int(_clamp(w0, 0, MAX_WIPER))
     w1 = int(_clamp(w1, 0, MAX_WIPER))
@@ -97,10 +98,10 @@ class SquareWaveGenerator:
         w0, w1 = _display_amp_to_steps(display_amp)
 
         if self._debug:
-            peak = display_amp / 2.0
+            vpeak = display_amp / 2.0
             print(
                 f"[SquareWave] requested={display_amp:.2f} Vpp  "
-                f"(+/- {peak:.2f} V ideal)  "
+                f"(ideal +{vpeak:.2f} / -{vpeak:.2f} V)  "
                 f"W0={w0}  W1={w1}"
             )
 
@@ -114,10 +115,6 @@ class SquareWaveGenerator:
             print(f"[SquareWave] frequency={self._frequency} Hz")
 
     def set_amplitude(self, amplitude: float):
-        """
-        amplitude is Vpp.
-        Example: amplitude=10.0 means +5 V to -5 V.
-        """
         self._amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
         self._write_amplitude(self._amplitude)
 
@@ -137,8 +134,8 @@ class SquareWaveGenerator:
         self._running = False
         self._pi.hardware_PWM(PWM_GPIO, 0, 0)
 
-        # Return to 0 V centered output
-        self._write_wipers(CENTER_W0, CENTER_W1)
+        # Return to calibrated 0 V center
+        self._write_wipers(ZERO_W0, ZERO_W1)
 
         if self._debug:
             print("[SquareWave] stopped")
@@ -162,15 +159,9 @@ class SquareWaveGenerator:
     def last_w1(self):
         return self._last_w1
 
-    def test_amplitude_ramp(self, frequency=1000, wait_seconds=4):
+    def test_amplitude_ramp(self, frequency=1000, wait_seconds=5):
         """
-        Test Vpp amplitude centered around 0 V:
-          0 Vpp  -> 0 to 0
-          2 Vpp  -> +1 / -1
-          4 Vpp  -> +2 / -2
-          6 Vpp  -> +3 / -3
-          8 Vpp  -> +4 / -4
-         10 Vpp  -> +5 / -5
+        0 Vpp -> 2 -> 4 -> 6 -> 8 -> 10 -> 0
         """
         if self._debug:
             print(f"\n[TEST] Starting bipolar amplitude ramp at {frequency} Hz")
@@ -201,10 +192,8 @@ if __name__ == "__main__":
 
     try:
         gen.test_amplitude_ramp(frequency=1000, wait_seconds=5)
-
     except KeyboardInterrupt:
         print("\nTest interrupted.")
-
     finally:
         print("Cleaning up...")
         gen.cleanup()
