@@ -39,9 +39,10 @@ def _display_amp_to_steps(display_amp):
     """
     Convert amplitude in Vpp to wiper positions.
 
-    Both wipers scale together (0 -> 127) as amplitude increases.
-    POB=PWM, POA=GND means each wiper is a voltage divider — both must
-    move in the same direction to increase the output level.
+    Both wipers scale together 0->127. POW0 feeds a non-inverting amp and
+    POW1 feeds a separate inverting amp — both must increase together for
+    the combined amplitude to increase. Opposite sweep cancels to constant.
+    0 Vpp -> W0=W1=0 (no output, correct). Set amplitude > 0 to see signal.
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
