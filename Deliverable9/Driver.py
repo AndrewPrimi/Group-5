@@ -1,27 +1,15 @@
 """
-Driver.py – Deliverable 9
-=========================
+Driver.py
 
-LCD + rotary-encoder UI for:
-  - Ohmmeter
-  - Voltmeter
+Integrated UI driver for:
+- Ohmmeter      (ohmmeter.py + ohms_steps.py)
+- Voltmeter     (sar_logic.py)
+- DC Reference  (dc_reference.py)
 
-Integrated modules:
-  - rotary_encoder.py
-  - ohmmeter.py
-  - ohms_steps.py
-
-Navigation:
-  Rotate      -> move menu cursor
-  Short press -> select / confirm
-  Button press on live pages -> return
-
-Hardware:
-  LCD          : I2C 20x4 at address 0x27
-  Rotary enc.  : A = GPIO 22, B = GPIO 27, button = GPIO 17
-  MCP4131 DAC  : SPI CE1 (GPIO 7)
-  Ohmmeter cmp : GPIO 24
-  Voltmeter cmp: GPIO 23
+Works with:
+- i2c_lcd.py
+- rotary_encoder.py
+- callbacks.py
 """
 
 import time
@@ -31,114 +19,89 @@ import i2c_lcd
 import rotary_encoder
 
 from callbacks import (
-    setup_callbacks,
-    clear_callbacks,
-    menu_direction_callback,
-    menu_button_callback,
-    ohm_button_callback,
     PIN_A,
     PIN_B,
     ROTARY_BTN_PIN,
-    _redraw_main_menu,
+    setup_callbacks,
+    clear_callbacks,
+    show_main_menu,
+    show_dc_reference_page,
+    menu_direction_callback,
+    menu_button_callback,
+    ohm_button_callback,
+    volt_button_callback,
+    dc_ref_direction_callback,
+    dc_ref_button_callback,
 )
 
 from ohmmeter import (
     open_adc,
     close_adc,
-    averaged_measure as ohm_averaged_measure,
+    averaged_measure,
     step_to_resistance,
     tolerance,
-    COMPARATOR2_PIN as OHM_COMPARATOR_PIN,
+    COMPARATOR2_PIN,
     MCP4131_MAX_STEPS,
 )
 
 from ohms_steps import (
     MINIMUM_OHMS,
     MAXIMUM_OHMS,
-    step_to_ohms as pot_step_to_ohms,
-    fix_ohms as pot_fix_ohms,
+    step_to_ohms,
+    fix_ohms,
 )
 
-from voltmeter import (
-    run_source_menu,
-    run_measurement,
-    SRC_BACK,
-    SOURCE_LABELS,
-)
+from sar_logic import SAR_ADC
+from dc_reference import DCReferenceGenerator
 
-MEASURE_INTERVAL = 0.5  # seconds
+# ─────────────────────────────────────────────────────────────────────────────
+# Hardware / system constants
+# ─────────────────────────────────────────────────────────────────────────────
 
+MEASURE_INTERVAL = 0.5
 
-# ── Initialise pigpio ────────────────────────────────────────────────────────
-pi = pigpio.pi()
-if not pi.connected:
-    print("Cannot connect to pigpio daemon. Run 'sudo pigpiod' first.")
-    raise SystemExit(1)
+# Separate SPI handle for MCP4231 bipolar DC reference
+DCREF_SPI_CHANNEL = 0
+DCREF_SPI_SPEED = 50_000
+DCREF_SPI_FLAGS = 0
 
+# Comparator pin for voltmeter SAR logic
+VOLT_COMPARATOR_PIN = 23
 
-# ── Peripherals ──────────────────────────────────────────────────────────────
-lcd = i2c_lcd.lcd(pi, width=20)
-adc_handle = open_adc(pi)   # opens SPI CE1 and configures ohmmeter comparator
-
-print(f"ADC SPI handle: {adc_handle}")
+# SAR voltage reference used by read_voltage()
+VOLT_VREF = 5.0
 
 
-# ── GPIO setup ───────────────────────────────────────────────────────────────
-for pin in (PIN_A, PIN_B):
-    pi.set_mode(pin, pigpio.INPUT)
-    pi.set_pull_up_down(pin, pigpio.PUD_UP)
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper formatting
+# ─────────────────────────────────────────────────────────────────────────────
 
-pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
-pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
-pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)  # 10 ms
-
-# Voltmeter comparator pin
-pi.set_mode(23, pigpio.INPUT)
-pi.set_pull_up_down(23, pigpio.PUD_UP)
-
-
-# ── Shared application state ────────────────────────────────────────────────
-state = {
-    'menu_selection': 1,       # 1 = Ohmmeter, 2 = Voltmeter
-    'isMainPage': True,
-    'isOhmPage': False,
-    'active_callbacks': [],
-
-    'button_last_tick': None,
-    'button_press_tick': None,
-    'button_pressed': False,
-    'button_held': False,
-
-    'encoder_delta': 0,
-}
-
-setup_callbacks(state, pi, lcd)
-
-
-# ── Display helpers ──────────────────────────────────────────────────────────
-def _fmt_ohms(ohms):
-    """Compact ohms formatter for LCD."""
-    if ohms == float("inf"):
+def fmt_ohms(value):
+    if value == float("inf"):
         return "Open"
-    if ohms >= 1000:
-        return f"{ohms / 1000:.2f}k"
-    return f"{ohms:.0f}"
+    if value >= 1000:
+        return f"{value / 1000:.2f}k"
+    return f"{value:.0f}"
 
 
-def build_ohm_lines(step):
+def fmt_volts(value):
+    return f"{value:+.2f}V"
+
+
+def build_ohmmeter_lines(step):
     """
-    Build four LCD lines for ohmmeter page.
+    Build LCD lines for ohmmeter page.
 
-    Integrates:
-      - ohmmeter.py for calibrated external resistance
-      - ohms_steps.py for helper conversion/debug-style equivalent pot reading
+    Uses:
+    - ohmmeter.py for actual calibrated resistance measurement
+    - ohms_steps.py for helper conversion / display integration
     """
     if step <= 0:
         return (
             "Ohmmeter",
             "Open circuit",
             "Step: 0",
-            "Btn: main menu",
+            "Btn: back",
         )
 
     if step >= MCP4131_MAX_STEPS:
@@ -146,27 +109,27 @@ def build_ohm_lines(step):
             "Ohmmeter",
             "Short circuit",
             f"Step: {step}",
-            "Btn: main menu",
+            "Btn: back",
         )
 
-    measured_r = step_to_resistance(step)
-    tol_r = tolerance(step)
+    measured = step_to_resistance(step)
+    tol = tolerance(step)
 
-    # Map 5-bit SAR step (0..31) to 7-bit style pot code (0..127) so that
-    # ohms_steps.py helpers are genuinely used in the integration.
-    pot_code = round(step * 127 / MCP4131_MAX_STEPS)
-    pot_est = pot_fix_ohms(pot_step_to_ohms(pot_code))
+    # Map 5-bit SAR step (0..31) to 7-bit code (0..127) so ohms_steps.py
+    # is integrated into the display meaningfully.
+    mapped_code = round(step * 127 / MCP4131_MAX_STEPS)
+    approx_pot_ohms = fix_ohms(step_to_ohms(mapped_code))
 
-    line1 = f"R: {_fmt_ohms(measured_r)} Ohm"
-    line2 = f"+/- {_fmt_ohms(tol_r)}"
+    if measured < MINIMUM_OHMS:
+        status = "Below range"
+    elif measured > MAXIMUM_OHMS:
+        status = "Above range"
+    else:
+        status = f"+/- {fmt_ohms(tol)}"
 
-    # Keep a useful debug/calibration line that uses ohms_steps.py
-    if measured_r < MINIMUM_OHMS:
-        line2 = "Below min range"
-    elif measured_r > MAXIMUM_OHMS:
-        line2 = "Above max range"
-
-    line3 = f"S:{step:02d} P:{_fmt_ohms(pot_est)}"
+    line1 = f"R: {fmt_ohms(measured)}"
+    line2 = status
+    line3 = f"S:{step:02d} P:{fmt_ohms(approx_pot_ohms)}"
 
     return (
         "Ohmmeter",
@@ -176,57 +139,62 @@ def build_ohm_lines(step):
     )
 
 
-# ── Main menu ────────────────────────────────────────────────────────────────
-def show_main_menu():
-    lcd.put_line(0, "Main Menu")
-    lcd.put_line(1, "Mode Select:")
-    _redraw_main_menu()
+def build_voltmeter_lines(voltage, step):
+    return (
+        "Voltmeter",
+        f"Vin: {fmt_volts(voltage)}"[:20],
+        f"Step: {step:03d}"[:20],
+        "Btn: back",
+    )
 
 
-def run_main_menu():
-    """Block until user selects Ohmmeter or Voltmeter."""
-    state['isMainPage'] = True
-    state['menu_selection'] = 1
-    state['button_last_tick'] = None
+# ─────────────────────────────────────────────────────────────────────────────
+# Page runners
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_main_menu(state, pi, lcd):
+    state["isMainPage"] = True
+    state["menu_selection"] = 0
+    state["button_last_tick"] = None
 
     clear_callbacks(state)
     show_main_menu()
 
     decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, menu_button_callback)
-    state['active_callbacks'] = [decoder, cb_btn]
 
-    while state['isMainPage']:
+    state["active_callbacks"] = [decoder, cb_btn]
+
+    while state["isMainPage"]:
         time.sleep(0.05)
 
     clear_callbacks(state)
+    return state.get("selected_mode", 0)
 
 
-# ── Ohmmeter page ────────────────────────────────────────────────────────────
-def run_ohmmeter():
-    """Continuously measure and display resistance; button returns to main menu."""
-    state['isOhmPage'] = True
-    state['button_last_tick'] = None
+def run_ohmmeter(state, pi, lcd, adc_handle):
+    state["isOhmPage"] = True
+    state["button_last_tick"] = None
 
     clear_callbacks(state)
 
     lcd.put_line(0, "Ohmmeter")
     lcd.put_line(1, "Measuring...")
     lcd.put_line(2, "")
-    lcd.put_line(3, "Btn: main menu")
+    lcd.put_line(3, "Btn: back")
 
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, ohm_button_callback)
-    state['active_callbacks'] = [cb_btn]
+    state["active_callbacks"] = [cb_btn]
 
     last_update = 0.0
 
-    while state['isOhmPage']:
+    while state["isOhmPage"]:
         now = time.time()
         if now - last_update >= MEASURE_INTERVAL:
             last_update = now
 
-            step = ohm_averaged_measure(pi, adc_handle, OHM_COMPARATOR_PIN, n=11)
-            l0, l1, l2, l3 = build_ohm_lines(step)
+            step = averaged_measure(pi, adc_handle, COMPARATOR2_PIN, n=11)
+            l0, l1, l2, l3 = build_ohmmeter_lines(step)
 
             lcd.put_line(0, l0)
             lcd.put_line(1, l1)
@@ -240,40 +208,181 @@ def run_ohmmeter():
     clear_callbacks(state)
 
 
-# ── Voltmeter page ───────────────────────────────────────────────────────────
-def run_voltmeter():
-    """Voltmeter source menu then live measurement."""
-    while True:
-        choice = run_source_menu(state, pi, lcd)
-        if choice == SRC_BACK:
-            break
+def run_voltmeter(state, pi, lcd, sar_adc):
+    state["isVoltPage"] = True
+    state["button_last_tick"] = None
 
-        run_measurement(
-            state,
-            pi,
-            lcd,
-            adc_handle,
-            source_label=SOURCE_LABELS[choice],
+    clear_callbacks(state)
+
+    lcd.put_line(0, "Voltmeter")
+    lcd.put_line(1, "Measuring...")
+    lcd.put_line(2, "")
+    lcd.put_line(3, "Btn: back")
+
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, volt_button_callback)
+    state["active_callbacks"] = [cb_btn]
+
+    last_update = 0.0
+
+    while state["isVoltPage"]:
+        now = time.time()
+        if now - last_update >= MEASURE_INTERVAL:
+            last_update = now
+
+            voltage, step = sar_adc.read_voltage(VOLT_VREF)
+            l0, l1, l2, l3 = build_voltmeter_lines(voltage, step)
+
+            lcd.put_line(0, l0)
+            lcd.put_line(1, l1)
+            lcd.put_line(2, l2)
+            lcd.put_line(3, l3)
+
+            print(f"[Voltmeter] voltage={voltage:+.3f} V | step={step}")
+
+        time.sleep(0.05)
+
+    clear_callbacks(state)
+
+
+def run_dc_reference(state, pi, lcd, dc_ref):
+    state["isDCRefPage"] = True
+    state["button_last_tick"] = None
+    state["dc_ref_obj"] = dc_ref
+    state["dc_ref_enabled"] = True
+
+    clear_callbacks(state)
+
+    # Start output at current stored voltage
+    dc_ref.start()
+    show_dc_reference_page()
+
+    decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, dc_ref_direction_callback)
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, dc_ref_button_callback)
+
+    state["active_callbacks"] = [decoder, cb_btn]
+
+    while state["isDCRefPage"]:
+        time.sleep(0.05)
+
+    clear_callbacks(state)
+
+    # Return safely to 0 V when exiting page
+    state["dc_ref_enabled"] = False
+    dc_ref.stop()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main():
+    pi = pigpio.pi()
+    if not pi.connected:
+        print("Cannot connect to pigpio daemon. Run: sudo pigpiod")
+        raise SystemExit(1)
+
+    lcd = None
+    adc_handle = None
+    dc_spi_handle = None
+
+    try:
+        # LCD
+        lcd = i2c_lcd.lcd(pi, width=20)
+
+        # Shared measurement SPI handle from ohmmeter.py (CE1)
+        adc_handle = open_adc(pi)
+
+        # Separate SPI handle for bipolar DC reference (CE0)
+        dc_spi_handle = pi.spi_open(DCREF_SPI_CHANNEL, DCREF_SPI_SPEED, DCREF_SPI_FLAGS)
+
+        # GPIO setup
+        for pin in (PIN_A, PIN_B):
+            pi.set_mode(pin, pigpio.INPUT)
+            pi.set_pull_up_down(pin, pigpio.PUD_UP)
+
+        pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
+        pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
+        pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
+
+        # Voltmeter comparator input
+        pi.set_mode(VOLT_COMPARATOR_PIN, pigpio.INPUT)
+        pi.set_pull_up_down(VOLT_COMPARATOR_PIN, pigpio.PUD_OFF)
+
+        # Objects
+        sar_adc = SAR_ADC(
+            pi=pi,
+            spi_handle=adc_handle,
+            comparator_pin=VOLT_COMPARATOR_PIN,
+            selected_pot=0,
+            settle_time=0.002,
+            invert_comparator=False,
         )
 
+        dc_ref = DCReferenceGenerator(
+            pi=pi,
+            spi_handle=dc_spi_handle,
+            settle_time=0.001,
+        )
 
-# ── Main loop ────────────────────────────────────────────────────────────────
-print("Starting Deliverable 9 driver...")
+        state = {
+            "menu_selection": 0,
+            "selected_mode": 0,
+            "active_callbacks": [],
+            "button_last_tick": None,
 
-try:
-    while True:
-        run_main_menu()
+            "isMainPage": True,
+            "isOhmPage": False,
+            "isVoltPage": False,
+            "isDCRefPage": False,
 
-        if state['menu_selection'] == 1:
-            run_ohmmeter()
-        elif state['menu_selection'] == 2:
-            run_voltmeter()
+            "dc_ref_voltage": 0.0,
+            "dc_ref_step_size": 0.1,
+            "dc_ref_enabled": False,
+            "dc_ref_obj": None,
+        }
 
-except KeyboardInterrupt:
-    print("\nStopping...")
+        setup_callbacks(state, pi, lcd)
 
-finally:
-    clear_callbacks(state)
-    lcd.close()
-    close_adc(pi, adc_handle)
-    pi.stop()
+        print("Starting integrated driver...")
+
+        while True:
+            mode = run_main_menu(state, pi, lcd)
+
+            if mode == 0:
+                run_ohmmeter(state, pi, lcd, adc_handle)
+
+            elif mode == 1:
+                run_voltmeter(state, pi, lcd, sar_adc)
+
+            elif mode == 2:
+                run_dc_reference(state, pi, lcd, dc_ref)
+
+    except KeyboardInterrupt:
+        print("\nStopping program...")
+
+    finally:
+        clear_callbacks()
+
+        if lcd is not None:
+            try:
+                lcd.close()
+            except Exception:
+                pass
+
+        if adc_handle is not None:
+            try:
+                close_adc(pi, adc_handle)
+            except Exception:
+                pass
+
+        if dc_spi_handle is not None:
+            try:
+                pi.spi_close(dc_spi_handle)
+            except Exception:
+                pass
+
+        pi.stop()
+
+
+if __name__ == "__main__":
+    main()
