@@ -19,7 +19,6 @@ Works with:
 import time
 import pigpio
 import rotary_encoder
-import ohms_steps
 
 PIN_A = 22
 PIN_B = 27
@@ -247,90 +246,4 @@ def wait_for_back_page(lines_getter, refresh_s=0.25):
     finally:
         clear_callbacks()
 
-
-def run_ohmmeter():
-    """
-    Entry point for ohmmeter control.
-
-    Uses:
-    - Variable resistance mode (adjust freely)
-    - Constant presets (100, 1k, 5k, 10k)
-    """
-    while True:
-        choice = pick_menu(
-            "OHMMETER",
-            ["Variable", "Constant", "Back"]
-        )
-
-        if choice == "Variable":
-            run_variable_ohms()
-
-        elif choice == "Constant":
-            run_constant_ohms()
-
-        elif choice == "Back":
-            return
-
-        
-def run_variable_ohms():
-    """
-    Rotary adjustment of resistance using interpolation-backed conversion.
-    """
-    value = _state.get("ohms", ohms_steps.DEFAULT_OHMS)
-
-    while True:
-        new_val = adjust_value(
-            "OHMS",
-            value,
-            ohms_steps.MINIMUM_OHMS,
-            ohms_steps.MAXIMUM_OHMS,
-            10,  # matches your 10-ohm resolution idea
-            lambda v: f"{int(v)} ohm"
-        )
-
-        if new_val is None:
-            return
-
-        value = int(new_val)
-        _state["ohms"] = value
-
-        step = ohms_steps.ohms_to_step(value)
-
-        # Store for other modules (SPI writer, etc.)
-        _state["digipot_step"] = step
-
-        # Optional live confirmation page
-        wait_for_back_page(lambda: (
-            "OHMMETER ACTIVE",
-            f"Set: {value} ohm",
-            f"Step: {step}",
-            "Btn: Back"
-        ))
-
-        
-def run_constant_ohms():
-    """
-    Select from predefined resistance values.
-    """
-    while True:
-        choice = pick_menu(
-            "CONST OHMS",
-            ohms_steps.CONSTANT_LABELS + ["Back"]
-        )
-
-        if choice == "Back":
-            return
-
-        idx = ohms_steps.CONSTANT_LABELS.index(choice)
-        value = ohms_steps.CONSTANT_OHMS[idx]
-
-        _state["ohms"] = value
-        step = ohms_steps.ohms_to_step(value)
-        _state["digipot_step"] = step
-
-        wait_for_back_page(lambda: (
-            "CONST MODE",
-            f"Set: {value} ohm",
-            f"Step: {step}",
-            "Btn: Back"
-        ))
+        B

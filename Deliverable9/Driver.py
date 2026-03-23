@@ -72,6 +72,7 @@ from ohmmeter import (
 from ohms_steps import (
     MINIMUM_OHMS,
     MAXIMUM_OHMS,
+    ohms_to_step,
     step_to_ohms,
     fix_ohms,
 )
@@ -471,12 +472,90 @@ def run_dc_reference_menu(state, from_voltmeter=False):
             dc_stop(state)
             return "MAIN"
 
+        
+# ─────────────────────────────────────────────────────────────
+# Potentiometer Menu
+# ─────────────────────────────────────────────────────────────
+
+def run_potentiometer_menu(state):
+    while True:
+        choice = pick_menu(
+            "Potentiometer",
+            ["Variable", "Constant", "Back", "Main"],
+        )
+
+        if choice == "Variable":
+            run_pot_variable(state)
+
+        elif choice == "Constant":
+            run_pot_constant(state)
+
+        elif choice == "Back":
+            return "BACK"
+
+        elif choice == "Main":
+            return "MAIN"
+
+
+def run_pot_variable(state):
+    value = state.get("pot_ohms", 1000)
+
+    new_val = adjust_value(
+        "Set Resistance",
+        value,
+        MINIMUM_OHMS,
+        MAXIMUM_OHMS,
+        10,
+        lambda v: f"{int(v)} ohm",
+    )
+
+    if new_val is None:
+        return
+
+    value = int(new_val)
+    state["pot_ohms"] = value
+
+    step = ohms_to_step(value)
+    state["pot_step"] = step
+
+    wait_for_back_page(lambda: (
+        "Potentiometer",
+        f"Set: {value} ohm",
+        f"Step: {step}",
+        "Btn: Back",
+    ))
+
+
+def run_pot_constant(state):
+    presets = [100, 1000, 5000, 10000]
+
+    labels = [f"{p} ohm" for p in presets]
+
+    choice = pick_menu("Const Res", labels + ["Back", "Main"])
+
+    if choice in ("Back", "Main"):
+        return
+
+    value = presets[labels.index(choice)]
+
+    state["pot_ohms"] = value
+    step = ohms_to_step(value)
+    state["pot_step"] = step
+
+    wait_for_back_page(lambda: (
+        "Const Mode",
+        f"Set: {value} ohm",
+        f"Step: {step}",
+        "Btn: Back",
+    ))
+
+        
 
 def run_main_menu(state, pi, adc_handle):
     while True:
         choice = pick_menu(
             "Mode Select",
-            ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
+            ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Potentiometer", "Back", "Main"],
         )
 
         if choice == "Function Generator":
@@ -498,6 +577,11 @@ def run_main_menu(state, pi, adc_handle):
             if result == "MAIN":
                 continue
 
+        elif choice == "Potentiometer":
+            result = run_potentiometer_menu(state)
+            if result == "MAIN":
+                continue
+            
         elif choice == "Back":
             fg_stop(state)
             dc_stop(state)
@@ -583,6 +667,9 @@ def main():
 
             "volt_source_label": "External",
             "sar_adc": sar_adc,
+
+            #"pot_ohms": 5000,
+            #"pot_step": 0,
         }
 
         setup_callbacks(state, pi, lcd)
