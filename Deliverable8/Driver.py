@@ -43,15 +43,16 @@ if not pi.connected:
     raise SystemExit("Cannot connect to pigpio daemon. Run 'sudo pigpiod' first.")
 
 lcd = i2c_lcd.lcd(pi, width=20)
+
 spi_dc = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
 print(f"[DEBUG] spi_dc handle = {spi_dc}")
 if spi_dc < 0:
     raise SystemExit(f"spi_open failed with error {spi_dc}")
+
 gen = SquareWaveGenerator(pi, spi_dc, debug=True)
 gen.set_frequency(1000)
-gen.set_amplitude(0.0)
 
-dc_ref = DCReferenceGenerator(pi, spi_dc)
+dc_ref = DCReferenceGenerator(pi, spi_dc, debug=True)
 
 spi_vm = pi.spi_open(VM_SPI_CHANNEL, VM_SPI_SPEED, VM_SPI_FLAGS)
 voltmeter = SAR_ADC(pi, spi_vm, COMPARATOR_PIN)
@@ -67,7 +68,7 @@ pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 state = {
     'wave_type': 'Square',
     'frequency': 1000,
-    'amplitude': 0.0,   # Vpp
+    'amplitude': 0.0,
     'output_on': False,
     'dc_voltage': 0.0,
     'dc_output_on': False,
@@ -118,6 +119,21 @@ def _reset_input():
     state['button_pressed'] = False
     state['button_held'] = False
     state['encoder_delta'] = 0
+
+
+def _ensure_modes_do_not_conflict(prefer):
+    """
+    Only one owner should actively drive the shared MCP4231 at a time.
+    """
+    if prefer == 'square' and state['dc_output_on']:
+        dc_ref.stop(clear_to_zero=False)
+        state['dc_output_on'] = False
+        print("[Driver] DC reference paused because square wave output was enabled")
+
+    elif prefer == 'dc' and state['output_on']:
+        gen.stop(clear_wipers=False)
+        state['output_on'] = False
+        print("[Driver] Square wave paused because DC reference was enabled")
 
 
 def pick_menu(title, options):
@@ -241,7 +257,10 @@ def run_amplitude_menu():
             if new_val is not None:
                 state['amplitude'] = round(new_val, 1)
                 gen.set_amplitude(state['amplitude'])
-                print(f"[Driver] amplitude set to {state['amplitude']:.1f} V  W0={gen.last_w0}  W1={gen.last_w1}")
+                print(
+                    f"[Driver] amplitude set to {state['amplitude']:.1f} V  "
+                    f"W0={gen.last_w0}  W1={gen.last_w1}"
+                )
         elif choice == 'Back':
             return
 
@@ -281,17 +300,18 @@ def run_output_menu():
         status = 'ON' if state['output_on'] else 'OFF'
         choice = pick_menu(f"OUTPUT: {status}", ['On', 'Off', 'Back'])
         if choice == 'On':
+            _ensure_modes_do_not_conflict('square')
             gen.set_frequency(state['frequency'])
             gen.set_amplitude(state['amplitude'])
             gen.start()
             state['output_on'] = True
             run_live_display()
         elif choice == 'Off':
-            gen.stop()
+            gen.stop(clear_wipers=False)
             state['output_on'] = False
         elif choice == 'Back':
             if state['output_on']:
-                gen.stop()
+                gen.stop(clear_wipers=False)
                 state['output_on'] = False
             return
 
@@ -349,23 +369,24 @@ def run_dc_output_menu():
         status = 'ON' if state['dc_output_on'] else 'OFF'
         choice = pick_menu(f"DC OUTPUT: {status}", ['On', 'Off', 'Back', 'Main'])
         if choice == 'On':
+            _ensure_modes_do_not_conflict('dc')
             dc_ref.set_voltage(state['dc_voltage'])
             dc_ref.start()
             state['dc_output_on'] = True
             run_dc_live_display()
-            dc_ref.stop()
+            dc_ref.stop(clear_to_zero=False)
             state['dc_output_on'] = False
         elif choice == 'Off':
-            dc_ref.stop()
+            dc_ref.stop(clear_to_zero=False)
             state['dc_output_on'] = False
         elif choice == 'Back':
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop(clear_to_zero=False)
                 state['dc_output_on'] = False
             return False
         elif choice == 'Main':
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop(clear_to_zero=False)
                 state['dc_output_on'] = False
             return True
 
@@ -381,7 +402,7 @@ def run_dc_reference_menu():
                 return True
         elif choice == 'Back':
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop(clear_to_zero=False)
                 state['dc_output_on'] = False
             return False
 
@@ -404,9 +425,9 @@ def run_main_menu():
             run_dc_reference_menu()
         elif choice in ('Quit', 'Back'):
             if state['output_on']:
-                gen.stop()
+                gen.stop(clear_wipers=False)
             if state['dc_output_on']:
-                dc_ref.stop()
+                dc_ref.stop(clear_to_zero=False)
             lcd.put_line(0, 'Goodbye!')
             lcd.put_line(1, '')
             lcd.put_line(2, '')
@@ -422,9 +443,9 @@ except KeyboardInterrupt:
     print("\nStopping...")
 finally:
     if state['output_on']:
-        gen.stop()
+        gen.stop(clear_wipers=False)
     if state['dc_output_on']:
-        dc_ref.stop()
+        dc_ref.stop(clear_to_zero=False)
 
     gen.cleanup()
     dc_ref.cleanup()
