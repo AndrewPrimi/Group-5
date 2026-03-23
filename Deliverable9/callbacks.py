@@ -1,20 +1,31 @@
 """
 callbacks.py
 
-Shared callback logic for:
-- Main menu navigation
-- Ohmmeter page exit
-- Voltmeter page exit
-- DC reference page live rotary adjustment + exit
+Generic rotary encoder + button callback helpers for the LCD UI.
+
+This file is intentionally generic so Driver.py can build:
+- Main menu
+- Function Generator menus
+- Ohmmeter page
+- Voltmeter menus
+- DC Reference menus
+
+Works with:
+- pigpio
+- rotary_encoder.py
+- i2c_lcd.py
 """
 
+import time
 import pigpio
+import rotary_encoder
 
 PIN_A = 22
 PIN_B = 27
 ROTARY_BTN_PIN = 17
 
-BUTTON_DEBOUNCE_US = 200_000  # 200 ms
+BUTTON_DEBOUNCE_US = 200_000
+HOLD_US = 1_200_000  # optional hold support if you ever want it
 
 _state = None
 _pi = None
@@ -23,7 +34,8 @@ _lcd = None
 
 def setup_callbacks(state, pi, lcd):
     """
-    Store shared references for callbacks.
+    Store shared references so helpers in this file can access the
+    application state, pigpio instance, and LCD object.
     """
     global _state, _pi, _lcd
     _state = state
@@ -33,7 +45,8 @@ def setup_callbacks(state, pi, lcd):
 
 def clear_callbacks(state=None):
     """
-    Cancel all active callbacks / rotary decoders in the provided state.
+    Cancel all active callbacks / rotary decoders.
+
     Compatible with:
         clear_callbacks()
         clear_callbacks(state)
@@ -51,132 +64,184 @@ def clear_callbacks(state=None):
     target["active_callbacks"] = []
 
 
-def _debounced_press(tick):
+def _reset_input_flags():
+    _state["encoder_delta"] = 0
+    _state["button_pressed"] = False
+    _state["button_held"] = False
+    _state["button_press_tick"] = None
+
+
+def _button_cb(_gpio, level, tick):
     """
-    Returns True if this press is outside the debounce window.
+    Generic pushbutton callback:
+      falling edge -> start press timing
+      rising edge  -> mark short press or hold
     """
-    last = _state.get("button_last_tick")
-    if last is not None and pigpio.tickDiff(last, tick) < BUTTON_DEBOUNCE_US:
-        return False
+    if level == 0:
+        last = _state.get("button_last_tick")
+        if last is not None and pigpio.tickDiff(last, tick) < BUTTON_DEBOUNCE_US:
+            return
+        _state["button_last_tick"] = tick
+        _state["button_press_tick"] = tick
 
-    _state["button_last_tick"] = tick
-    return True
+    elif level == 1:
+        press_tick = _state.get("button_press_tick")
+        if press_tick is None:
+            return
 
+        held_us = pigpio.tickDiff(press_tick, tick)
+        if held_us >= HOLD_US:
+            _state["button_held"] = True
+        else:
+            _state["button_pressed"] = True
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main menu
-# ─────────────────────────────────────────────────────────────────────────────
-
-MAIN_MENU_ITEMS = [
-    "Ohmmeter",
-    "Voltmeter",
-    "DC Ref",
-]
-
-
-def _redraw_main_menu():
-    sel = _state.get("menu_selection", 0)
-
-    _lcd.put_line(0, "Main Menu")
-    _lcd.put_line(1, "Select Mode")
-
-    # 20x4 LCD, so show title + 3 options
-    for i, label in enumerate(MAIN_MENU_ITEMS):
-        prefix = ">" if i == sel else " "
-        _lcd.put_line(i + 1, f"{prefix} {label}")
+        _state["button_press_tick"] = None
 
 
-def show_main_menu():
-    _redraw_main_menu()
-
-
-def menu_direction_callback(direction):
-    current = _state.get("menu_selection", 0)
-    current = (current + direction) % len(MAIN_MENU_ITEMS)
-    _state["menu_selection"] = current
-    _redraw_main_menu()
-
-
-def menu_button_callback(gpio, level, tick):
-    if level != 0:
-        return
-    if not _debounced_press(tick):
-        return
-
-    _state["selected_mode"] = _state.get("menu_selection", 0)
-    _state["isMainPage"] = False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Ohmmeter page
-# ─────────────────────────────────────────────────────────────────────────────
-
-def ohm_button_callback(gpio, level, tick):
-    if level != 0:
-        return
-    if not _debounced_press(tick):
-        return
-
-    _state["isOhmPage"] = False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Voltmeter page
-# ─────────────────────────────────────────────────────────────────────────────
-
-def volt_button_callback(gpio, level, tick):
-    if level != 0:
-        return
-    if not _debounced_press(tick):
-        return
-
-    _state["isVoltPage"] = False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DC reference page
-# ─────────────────────────────────────────────────────────────────────────────
-
-def dc_ref_direction_callback(direction):
+def _encoder_cb(direction):
     """
-    Rotary adjustment for bipolar DC reference.
+    Generic rotary movement callback from rotary_encoder.decoder.
     """
-    step_size = _state.get("dc_ref_step_size", 0.1)
-    voltage = _state.get("dc_ref_voltage", 0.0)
-
-    voltage += direction * step_size
-    voltage = max(-5.0, min(5.0, round(voltage, 2)))
-
-    _state["dc_ref_voltage"] = voltage
-
-    dc_ref = _state.get("dc_ref_obj")
-    if dc_ref is not None:
-        dc_ref.set_voltage(voltage)
-
-    _redraw_dc_reference_page()
+    _state["encoder_delta"] = _state.get("encoder_delta", 0) + direction
 
 
-def dc_ref_button_callback(gpio, level, tick):
+def attach_input_callbacks():
     """
-    Button exits DC reference page.
+    Attach generic rotary/button handlers and store them in state.
     """
-    if level != 0:
+    clear_callbacks()
+    decoder = rotary_encoder.decoder(_pi, PIN_A, PIN_B, _encoder_cb)
+    cb_btn = _pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
+    _state["active_callbacks"] = [decoder, cb_btn]
+
+
+def draw_menu(title, options, selected_idx):
+    """
+    Draw a scrolling 3-option window under a 1-line title.
+
+    LCD layout:
+      row 0 = title
+      row 1..3 = visible options
+    """
+    title = str(title)[:20]
+    _lcd.put_line(0, title)
+
+    if not options:
+        for row in range(1, 4):
+            _lcd.put_line(row, "")
         return
-    if not _debounced_press(tick):
-        return
 
-    _state["isDCRefPage"] = False
+    # Keep selected item centered when possible
+    if len(options) <= 3:
+        start = 0
+    else:
+        start = max(0, min(selected_idx - 1, len(options) - 3))
+
+    for row in range(3):
+        i = start + row
+        if i < len(options):
+            prefix = ">" if i == selected_idx else " "
+            _lcd.put_line(row + 1, f"{prefix} {options[i]}"[:20])
+        else:
+            _lcd.put_line(row + 1, "")
 
 
-def _redraw_dc_reference_page():
-    voltage = _state.get("dc_ref_voltage", 0.0)
-    enabled = _state.get("dc_ref_enabled", False)
+def pick_menu(title, options, start_idx=0):
+    """
+    Generic rotary menu.
 
-    _lcd.put_line(0, "DC Reference")
-    _lcd.put_line(1, f"Vout: {voltage:+.2f} V")
-    _lcd.put_line(2, f"Output: {'ON ' if enabled else 'OFF'}")
-    _lcd.put_line(3, "Rotate=adj Btn=back")
+    Returns:
+      selected option string
+    """
+    idx = max(0, min(start_idx, len(options) - 1 if options else 0))
+    _reset_input_flags()
+    attach_input_callbacks()
+    draw_menu(title, options, idx)
+
+    try:
+        while True:
+            delta = _state.get("encoder_delta", 0)
+            if delta != 0 and options:
+                idx = (idx + delta) % len(options)
+                _state["encoder_delta"] = 0
+                draw_menu(title, options, idx)
+
+            if _state.get("button_pressed"):
+                _state["button_pressed"] = False
+                return options[idx]
+
+            time.sleep(0.02)
+    finally:
+        clear_callbacks()
 
 
-def show_dc_reference_page():
-    _redraw_dc_reference_page()
+def adjust_value(title, value, min_val, max_val, step, formatter=str):
+    """
+    Generic rotary numeric adjuster.
+
+    Short press confirms.
+    Hold cancels and returns None.
+    """
+    _reset_input_flags()
+    attach_input_callbacks()
+
+    def redraw():
+        _lcd.put_line(0, str(title)[:20])
+        _lcd.put_line(1, str(formatter(value))[:20])
+        _lcd.put_line(2, "Rotate to adjust"[:20])
+        _lcd.put_line(3, "Btn=OK Hold=Cancel"[:20])
+
+    redraw()
+
+    try:
+        while True:
+            delta = _state.get("encoder_delta", 0)
+            if delta != 0:
+                value += delta * step
+                value = max(min_val, min(max_val, value))
+                # snap to step cleanly
+                value = round(round(value / step) * step, 10)
+                _state["encoder_delta"] = 0
+                redraw()
+
+            if _state.get("button_pressed"):
+                _state["button_pressed"] = False
+                return value
+
+            if _state.get("button_held"):
+                _state["button_held"] = False
+                return None
+
+            time.sleep(0.02)
+    finally:
+        clear_callbacks()
+
+
+def wait_for_back_page(lines_getter, refresh_s=0.25):
+    """
+    Show a live page until short press or hold.
+
+    lines_getter must return a tuple/list of 4 strings.
+    """
+    _reset_input_flags()
+    attach_input_callbacks()
+    last = 0.0
+
+    try:
+        while True:
+            now = time.time()
+            if now - last >= refresh_s:
+                last = now
+                lines = lines_getter()
+                for row in range(4):
+                    text = lines[row] if row < len(lines) else ""
+                    _lcd.put_line(row, str(text)[:20])
+
+            if _state.get("button_pressed") or _state.get("button_held"):
+                _state["button_pressed"] = False
+                _state["button_held"] = False
+                return
+
+            time.sleep(0.02)
+    finally:
+        clear_callbacks()
