@@ -7,20 +7,21 @@ MIN_FREQ = 100
 MAX_FREQ = 10_000
 FREQ_STEP = 10
 
+# User-facing amplitude in V (peak). Output swings ±amplitude centered at 0V.
 MAX_AMP = 10.0
+AMP_STEP = 0.3125
 
-# MCP42X1 command bytes
+# MCP4131 single digital potentiometer (10kΩ, 7-bit, 129 taps)
 CMD_W0 = 0x00
-CMD_W1 = 0x10
+MAX_WIPER = 128
 
-MAX_WIPER = 127
-
-# Choose one mapping style for testing.
-# "same"     -> both wipers move together
-# "opposite" -> one rises while the other falls
-# "fixed_w1" -> W1 held at max, W0 varies
-# "fixed_w0" -> W0 held at max, W1 varies
-AMP_MODE = "opposite"
+# Circuit parameters for amplitude calculation:
+#   PWM (3.3V) → MCP4131 voltage divider → 470µF DC-blocking cap
+#   → 100kΩ bias to GND → 10kΩ into TL081 inverting amp (70kΩ feedback)
+#   Gain magnitude = 70k / 10k = 7
+#   Output peak = GAIN * V_PWM * wiper_step / (2 * MAX_WIPER)
+V_PWM = 3.3
+AMP_GAIN = 7.0
 
 SETTLE_TIME = 0.01
 
@@ -29,42 +30,16 @@ def _clamp(value, low, high):
     return max(low, min(high, value))
 
 
-def _lerp(a, b, t):
-    return a + (b - a) * t
-
-
-def _amp_to_wipers(display_amp):
+def _amp_to_step(amplitude):
     """
-    Convert user amplitude (0..10 V) into digipot wiper steps.
+    Convert peak amplitude (0–10 V) to MCP4131 wiper step (0–128).
 
-    This does not drive PB terminals from GPIO.
-    GPIO 13 only generates PWM.
-    The digipot only sets resistance / control points.
+    Output peak = AMP_GAIN * V_PWM * step / (2 * MAX_WIPER)
+    Solving for step: step = amplitude * 2 * MAX_WIPER / (AMP_GAIN * V_PWM)
     """
-    display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
-    t = display_amp / MAX_AMP
-
-    if AMP_MODE == "same":
-        w = int(round(_lerp(0, 127, t)))
-        return w, w
-
-    if AMP_MODE == "opposite":
-        w0 = int(round(_lerp(0, 127, t)))
-        w1 = int(round(_lerp(127, 0, t)))
-        return w0, w1
-
-    if AMP_MODE == "fixed_w1":
-        w0 = int(round(_lerp(0, 127, t)))
-        w1 = 127
-        return w0, w1
-
-    if AMP_MODE == "fixed_w0":
-        w0 = 127
-        w1 = int(round(_lerp(0, 127, t)))
-        return w0, w1
-
-    # safe fallback
-    return 0, 0
+    amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
+    step = round(amplitude * 2 * MAX_WIPER / (AMP_GAIN * V_PWM))
+    return int(_clamp(step, 0, MAX_WIPER))
 
 
 class SquareWaveGenerator:
@@ -75,36 +50,24 @@ class SquareWaveGenerator:
         self._debug = debug
 
         self._frequency = MIN_FREQ
-        self._amplitude = 0.0
+        self._amplitude = 0.0   # V peak
         self._running = False
 
-        self._last_w0 = None
-        self._last_w1 = None
+        self._last_step = None
 
-    def _write_wipers(self, w0, w1):
-        w0 = int(_clamp(w0, 0, MAX_WIPER))
-        w1 = int(_clamp(w1, 0, MAX_WIPER))
-
-        self._pi.spi_write(self._spi, [CMD_W0, w0])
+    def _write_wiper(self, step):
+        step = int(_clamp(step, 0, MAX_WIPER))
+        r = self._pi.spi_write(self._spi, [CMD_W0, step])
         time.sleep(self._settle)
-
-        self._pi.spi_write(self._spi, [CMD_W1, w1])
-        time.sleep(self._settle)
-
-        self._last_w0 = w0
-        self._last_w1 = w1
-
+        self._last_step = step
         if self._debug:
-            print(f"[SquareWave] wrote W0={w0}, W1={w1}")
+            print(f"[SquareWave] spi_write r={r}  wiper={step}")
 
-    def _write_amplitude(self, display_amp):
-        w0, w1 = _amp_to_wipers(display_amp)
+    def _write_amplitude(self, amplitude):
+        step = _amp_to_step(amplitude)
         if self._debug:
-            print(
-                f"[SquareWave] amplitude={display_amp:.2f} V  "
-                f"mode={AMP_MODE}  W0={w0}  W1={w1}"
-            )
-        self._write_wipers(w0, w1)
+            print(f"[SquareWave] amplitude={amplitude:.4f} V  wiper={step}")
+        self._write_wiper(step)
 
     def set_frequency(self, frequency: int):
         self._frequency = int(_clamp(int(frequency), MIN_FREQ, MAX_FREQ))
@@ -117,10 +80,10 @@ class SquareWaveGenerator:
         self._amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
         self._write_amplitude(self._amplitude)
 
-    def set_raw_wipers(self, w0: int, w1: int):
+    def set_raw_wiper(self, step: int):
         if self._debug:
-            print(f"[SquareWave] manual raw write W0={w0}, W1={w1}")
-        self._write_wipers(w0, w1)
+            print(f"[SquareWave] manual raw write wiper={step}")
+        self._write_wiper(step)
 
     def start(self):
         self._running = True
@@ -129,10 +92,11 @@ class SquareWaveGenerator:
         if self._debug:
             print("[SquareWave] started")
 
-    def stop(self):
+    def stop(self, clear_wipers=True):
         self._running = False
         self._pi.hardware_PWM(PWM_GPIO, 0, 0)
-        self._write_wipers(0, 0)
+        if clear_wipers:
+            self._write_wiper(0)
         if self._debug:
             print("[SquareWave] stopped")
 
@@ -148,12 +112,8 @@ class SquareWaveGenerator:
         return self._amplitude
 
     @property
-    def last_w0(self):
-        return self._last_w0
-
-    @property
-    def last_w1(self):
-        return self._last_w1
+    def last_step(self):
+        return self._last_step
 
     def test_amplitude_ramp(self, frequency=1000, wait_seconds=4):
         if self._debug:
@@ -163,8 +123,8 @@ class SquareWaveGenerator:
         self.start()
 
         try:
-            for amp in [0, 2, 4, 6, 8, 10, 0]:
-                print(f"[TEST] amplitude -> {amp} V")
+            for amp in [0, 2.5, 5, 7.5, 10, 0]:
+                print(f"[TEST] amplitude -> {amp} V peak")
                 self.set_amplitude(amp)
                 time.sleep(wait_seconds)
         finally:
@@ -179,19 +139,9 @@ class SquareWaveGenerator:
         self._running = True
 
         try:
-            tests = [
-                (0, 0),
-                (32, 32),
-                (64, 64),
-                (96, 96),
-                (127, 127),
-                (0, 127),
-                (127, 0),
-            ]
-
-            for w0, w1 in tests:
-                print(f"[TEST] raw -> W0={w0}, W1={w1}")
-                self._write_wipers(w0, w1)
+            for step in [0, 32, 64, 96, 128]:
+                print(f"[TEST] raw wiper -> {step}")
+                self._write_wiper(step)
                 time.sleep(wait_seconds)
         finally:
             self.stop()
@@ -200,7 +150,7 @@ class SquareWaveGenerator:
 if __name__ == "__main__":
     import pigpio
 
-    print("Running square_wave.py standalone test...")
+    print("Running square_wave.py standalone test (MCP4131)...")
 
     pi = pigpio.pi()
     if not pi.connected:

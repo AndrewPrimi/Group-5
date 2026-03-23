@@ -11,7 +11,7 @@ import i2c_lcd
 import rotary_encoder
 from square_wave import (
     SquareWaveGenerator,
-    MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP,
+    MIN_FREQ, MAX_FREQ, FREQ_STEP, MAX_AMP, AMP_STEP,
 )
 from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
@@ -23,7 +23,7 @@ ROTARY_BTN_PIN = 17
 DEBOUNCE_US = 200_000
 HOLD_US = 2_000_000
 
-AMP_STEP = 0.1
+AMP_STEP_UI = AMP_STEP  # 0.3125 V per step, imported from square_wave
 
 MIN_DC_VOLT = -5.0
 MAX_DC_VOLT = 5.0
@@ -244,23 +244,20 @@ def run_frequency_menu():
 def run_amplitude_menu():
     while True:
         choice = pick_menu(
-            f"AMP: {state['amplitude']:.1f} V",
+            f"AMP: {state['amplitude']:.4f} V",
             ['Adjust', 'Back'],
         )
         if choice == 'Adjust':
             new_val = adjust_value(
-                'AMPLITUDE',
+                'AMPLITUDE (0-10V)',
                 state['amplitude'],
-                0.0, MAX_AMP, AMP_STEP,
-                lambda v: f"{v:.1f} V",
+                0.0, MAX_AMP, AMP_STEP_UI,
+                lambda v: f"{v:.4f} V",
             )
             if new_val is not None:
-                state['amplitude'] = round(new_val, 1)
+                state['amplitude'] = round(new_val, 4)
                 gen.set_amplitude(state['amplitude'])
-                print(
-                    f"[Driver] amplitude set to {state['amplitude']:.1f} V  "
-                    f"W0={gen.last_w0}  W1={gen.last_w1}"
-                )
+                print(f"[Driver] amplitude set to {state['amplitude']:.4f} V  wiper={gen.last_step}")
         elif choice == 'Back':
             return
 
@@ -273,7 +270,7 @@ def run_live_display():
         amp = state['amplitude']
 
         lcd.put_line(0, f"LIVE OUT  {state['frequency']}Hz")
-        lcd.put_line(1, f"Amp:{amp:.1f} V")
+        lcd.put_line(1, f"Amp:{amp:.4f} V")
         lcd.put_line(2, f"T:{period_ms:.2f}ms  DC:50%")
         lcd.put_line(3, 'Hold btn: back')
 
