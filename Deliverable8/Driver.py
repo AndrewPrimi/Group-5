@@ -44,7 +44,8 @@ if not pi.connected:
 
 lcd = i2c_lcd.lcd(pi, width=20)
 spi_dc = pi.spi_open(DC_SPI_CHANNEL, DC_SPI_SPEED, DC_SPI_FLAGS)
-gen = SquareWaveGenerator(pi, spi_dc, debug=True)
+spi_gen = pi.spi_open(0, 50_000, 0)
+gen = SquareWaveGenerator(pi, spi_gen, debug=True)
 gen.set_frequency(1000)
 gen.set_amplitude(0.0)
 
@@ -238,7 +239,7 @@ def run_amplitude_menu():
             if new_val is not None:
                 state['amplitude'] = round(new_val, 1)
                 gen.set_amplitude(state['amplitude'])
-                print(f"[Driver] amplitude set to {state['amplitude']:.1f} Vpp")
+                print(f"[Driver] amplitude set to {state['amplitude']:.1f} Vpp  W0={gen.last_w0}  W1={gen.last_w1}")
         elif choice == 'Back':
             return
 
@@ -426,6 +427,7 @@ finally:
 
     gen.cleanup()
     dc_ref.cleanup()
+    pi.spi_close(spi_gen)
     pi.spi_close(spi_dc)
     pi.spi_close(spi_vm)
     clear_callbacks()
