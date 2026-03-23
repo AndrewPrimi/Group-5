@@ -31,30 +31,17 @@ def _clamp(value, low, high):
     return max(low, min(high, value))
 
 
-def _lerp(a, b, t):
-    return a + (b - a) * t
-
-
 def _display_amp_to_steps(display_amp):
     """
     Convert amplitude in Vpp to wiper positions.
 
-    This version prioritizes making the amplitude visibly change again.
-    It drives the two pots in opposite directions across a large range.
-
-    0.0 Vpp  -> center-ish control
-    10.0 Vpp -> full spread
+    Both wipers scale linearly from 0 to MAX_WIPER as amplitude goes 0 to MAX_AMP.
     """
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
 
-    # Opposite-direction sweep
-    w0 = round(_lerp(127, 0, t))
-    w1 = round(_lerp(0, 127, t))
-
-    w0 = int(_clamp(w0, 0, MAX_WIPER))
-    w1 = int(_clamp(w1, 0, MAX_WIPER))
-    return w0, w1
+    w = int(_clamp(round(t * MAX_WIPER), 0, MAX_WIPER))
+    return w, w
 
 
 class SquareWaveGenerator:
