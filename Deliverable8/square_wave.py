@@ -12,11 +12,11 @@ FREQ_STEP = 10
 #   10.0 Vpp means the user wants a 10-volt peak-to-peak waveform
 MAX_AMP = 10.0
 
-#CMD_W0 = 0x00
-#CMD_W1 = 0x10
+CMD_W0 = 0x00
+CMD_W1 = 0x10
 
-CMD_W0 = 0x10
-CMD_W1 = 0x00
+#CMD_W0 = 0x10
+#CMD_W1 = 0x00
 MAX_WIPER = 127
 
 # These are intentionally broad so amplitude clearly changes again.
