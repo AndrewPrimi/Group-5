@@ -2,28 +2,6 @@
 Driver.py  –  Function Generator LCD UI
 ========================================
 LCD + rotary-encoder UI for the SquareWaveGenerator and DCReferenceGenerator.
-
-Navigation:
-  Rotate       →  move selection / adjust value
-  Short press  →  confirm / select
-  Hold 2 s     →  back / cancel
-
-Menu structure:
-  Main
-  ├── Type      (Square only)
-  ├── Frequency (rotary adjust, 100–10000 Hz, 10 Hz steps)
-  ├── Amplitude (rotary adjust, 0.0–10.0 Vpp, 0.1 V steps)
-  ├── Output
-  │     On   → live display (hold 2 s to return)
-  │     Off
-  │     Back (turns output OFF)
-  └── DC Reference
-        Voltage  (rotary adjust, -5.0–5.0 V, 0.625 V steps)
-        Output
-          On   → live display w/ voltmeter (hold 2 s or Back/Main turns OFF)
-          Off
-          Back (turns DC output OFF, returns to DC Reference menu)
-          Main (turns DC output OFF, returns to Main menu)
 """
 
 import pigpio
@@ -38,18 +16,15 @@ from square_wave import (
 from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
 
-# ── GPIO pin assignments ──────────────────────────────────────────────────────
 PIN_A = 22
 PIN_B = 27
 ROTARY_BTN_PIN = 17
 
-# ── Timing ────────────────────────────────────────────────────────────────────
 DEBOUNCE_US = 200_000
 HOLD_US = 2_000_000
 
 AMP_STEP = 0.1
 
-# ── DC Reference constants ────────────────────────────────────────────────────
 MIN_DC_VOLT = -5.0
 MAX_DC_VOLT = 5.0
 DC_VOLT_STEP = 0.625
@@ -57,14 +32,12 @@ DC_SPI_CHANNEL = 0
 DC_SPI_SPEED = 50_000
 DC_SPI_FLAGS = 0
 
-# ── Voltmeter (SAR ADC) constants ─────────────────────────────────────────────
 COMPARATOR_PIN = 24
 VREF = 5.0
 VM_SPI_CHANNEL = 1
 VM_SPI_SPEED = 50_000
 VM_SPI_FLAGS = 0
 
-# ── Initialise hardware ───────────────────────────────────────────────────────
 pi = pigpio.pi()
 if not pi.connected:
     raise SystemExit("Cannot connect to pigpio daemon. Run 'sudo pigpiod' first.")
@@ -88,11 +61,10 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
-# ── Shared state ──────────────────────────────────────────────────────────────
 state = {
     'wave_type': 'Square',
     'frequency': 1000,
-    'amplitude': 0.0,      # stored as Vpp
+    'amplitude': 0.0,   # Vpp
     'output_on': False,
     'dc_voltage': 0.0,
     'dc_output_on': False,
