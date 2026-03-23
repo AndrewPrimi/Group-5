@@ -49,8 +49,8 @@ def _display_amp_to_steps(display_amp):
     display_amp = _clamp(float(display_amp), 0.0, MAX_AMP)
     t = display_amp / MAX_AMP
 
-    w1 = int(_clamp(round(_lerp(127, 0, t)), 0, MAX_WIPER))
-    w0 = int(_clamp(round(_lerp(0, 127, t)), 0, MAX_WIPER))
+    w0 = int(_clamp(round(_lerp(127, 0, t)), 0, MAX_WIPER))
+    w1 = int(_clamp(round(_lerp(0, 127, t)), 0, MAX_WIPER))
     return w0, w1
 
 
@@ -69,8 +69,8 @@ class SquareWaveGenerator:
         self._last_w1 = None
 
     def _write_wipers(self, w0, w1):
-        w0 = int(_clamp(w0, 0, MAX_WIPER))
-        w1 = int(_clamp(w1, 0, MAX_WIPER))
+        w1 = int(_clamp(w0, 0, MAX_WIPER))
+        w0 = int(_clamp(w1, 0, MAX_WIPER))
 
         self._pi.spi_write(self._spi, [CMD_W0, w0])
         time.sleep(self._settle)
