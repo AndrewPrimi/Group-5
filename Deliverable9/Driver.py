@@ -56,6 +56,18 @@ from callbacks import (
     
     setup_callbacks,
     clear_callbacks,
+
+    pot_menu_direction_callback,
+    pot_menu_button_callback,
+
+    varconst_direction_callback,
+    varconst_button_callback,
+    
+    constant_direction_callback,
+    constant_button_callback,
+    
+    callback_set_digi,
+    pot_direction_callback,
     
     pick_menu,
     adjust_value,
