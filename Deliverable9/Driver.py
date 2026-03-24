@@ -86,10 +86,11 @@ from ohmmeter import (
 )
 
 from ohms_steps import (
-    MINIMUM_OHMS,
-    MAXIMUM_OHMS,
-    ohms_to_step,
-    step_to_ohms,
+    #MINIMUM_OHMS,
+    #MAXIMUM_OHMS,
+    ohms_to_step, step_to_ohms,
+    DEFAULT_OHMS, SPI_CHANNEL, SPI_SPEED, SPI_FLAGS,
+    CONSTANT_LABELS,
 )
 
 from dc_reference import DCReferenceGenerator
