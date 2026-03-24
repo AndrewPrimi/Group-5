@@ -82,28 +82,27 @@ def _averaged_measure(pi, spi_handle, comp_pin, n=11):
 # -3.5 -> -4.00
 # -4.0 -> -5.00
 #
-# We invert that mapping here:
-# old_displayed_value -> actual_value
-CAL_POINTS = [
-    (-5.00, -5.00),
-    (-4.00, -3.50),
-    (-3.33, -3.00),
-    (-3.00, -2.50),
-    (-2.50, -2.00),
-    (-2.00, -1.50),
-    (-1.33, -1.00),
-    (-1.00, -0.50),
-    (-0.33,  0.00),
-    ( 0.33,  0.50),
-    ( 0.67,  1.00),
-    ( 1.33,  1.50),
-    ( 2.00,  2.00),
-    ( 2.25,  2.50),
-    ( 2.75,  3.00),
-    ( 3.33,  3.50),
-    ( 3.67,  4.00),
-    ( 4.33,  4.50),
-    ( 5.00,  5.00),
+# Direct step -> actual voltage calibration table.
+# Measured points marked with (M), rest interpolated from old calibration chain.
+STEP_TO_VOLT = [
+    ( 0, -5.00),  # (M)
+    ( 1, -4.00),  # (M)
+    ( 4, -3.00),  # (M)
+    ( 7, -2.00),  # (M)
+    ( 9, -1.50),
+    (12, -1.00),
+    (13, -0.50),
+    (15,  0.00),
+    (16,  0.50),
+    (17,  1.00),
+    (18,  1.50),
+    (21,  2.00),
+    (22,  2.50),
+    (24,  3.00),
+    (26,  3.50),
+    (27,  4.00),
+    (29,  4.50),
+    (31,  5.00),
 ]
 
 V_MIN = -5.0
@@ -130,61 +129,22 @@ def _interp(x, x0, y0, x1, y1):
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
 
-def _old_step_to_voltage(step):
-    """
-    The old step-to-voltage mapping that produced the readings you gave.
-    This is kept only as an intermediate before calibration correction.
-    """
-    # Previous calibration table that roughly matched your old displayed values
-    old_points = [
-        (0,  -5.00),
-        (2,  -4.00),
-        (5,  -3.00),
-        (9,  -2.00),
-        (12, -1.00),
-        (15,  0.00),
-        (18,  1.00),
-        (21,  2.00),
-        (25,  3.00),
-        (28,  4.00),
-        (31,  5.00),
-    ]
-
+def step_to_voltage(step):
+    """Convert SAR step directly to calibrated voltage using STEP_TO_VOLT table."""
     step = max(0, min(step, MCP4131_MAX_STEPS))
+    pts = STEP_TO_VOLT
 
-    if step <= old_points[0][0]:
-        return old_points[0][1]
+    if step <= pts[0][0]:
+        return pts[0][1]
 
-    if step >= old_points[-1][0]:
-        return old_points[-1][1]
+    if step >= pts[-1][0]:
+        return pts[-1][1]
 
-    for (s0, v0), (s1, v1) in zip(old_points, old_points[1:]):
+    for (s0, v0), (s1, v1) in zip(pts, pts[1:]):
         if s0 <= step <= s1:
             return _interp(step, s0, v0, s1, v1)
 
     return 0.0
-
-
-def step_to_voltage(step):
-    """
-    Convert SAR step to corrected voltage.
-
-    Flow:
-      step -> old displayed voltage estimate -> calibrated actual voltage
-    """
-    raw_v = _old_step_to_voltage(step)
-
-    if raw_v <= CAL_POINTS[0][0]:
-        return CAL_POINTS[0][1]
-
-    if raw_v >= CAL_POINTS[-1][0]:
-        return CAL_POINTS[-1][1]
-
-    for (x0, y0), (x1, y1) in zip(CAL_POINTS, CAL_POINTS[1:]):
-        if x0 <= raw_v <= x1:
-            return _interp(raw_v, x0, y0, x1, y1)
-
-    return raw_v
 
 
 # ── Display helpers ───────────────────────────────────────────────────────────
