@@ -129,7 +129,7 @@ setup_callbacks(state, pi, lcd)
 def run_function_generator_menu():
     while True:
         choice = pick_menu(
-            "Function Gen",
+            "Function Generator",
             ["Type", "Frequency", "Amplitude", "Output", "Back", "Main"],
         )
 
@@ -177,10 +177,10 @@ def run_fg_type():
 
 
 def run_fg_frequency():
-    choice = pick_menu("Frequency", ["Set Frequency", "Back", "Main"])
-    if choice == "Set Frequency":
+    choice = pick_menu("Frequency", ["Input Frequency", "Back", "Main"])
+    if choice == "Input Frequency":
         val = adjust_value(
-            "Set Frequency",
+            "Input Frequency",
             state['fg_freq'],
             MIN_FREQ, MAX_FREQ, FREQ_STEP,
             lambda v: f"{int(v)} Hz",
@@ -195,10 +195,10 @@ def run_fg_frequency():
 
 
 def run_fg_amplitude():
-    choice = pick_menu("Amplitude", ["Set Amplitude", "Back", "Main"])
-    if choice == "Set Amplitude":
+    choice = pick_menu("Amplitude", ["Input Amplitude", "Back", "Main"])
+    if choice == "Input Amplitude":
         val = adjust_value(
-            "Set Amplitude",
+            "Input Amplitude",
             state['fg_amp'],
             0.0, MAX_AMP, AMP_STEP,
             lambda v: f"{v:.4f} V",
@@ -215,7 +215,7 @@ def run_fg_amplitude():
 def run_fg_output():
     """Output on/off — turns off automatically on Back or Main."""
     while True:
-        choice = pick_menu("FG Output", ["On", "Off", "Back", "Main"])
+        choice = pick_menu("Output", ["On", "Off", "Back", "Main"])
 
         if choice == "On":
             sq_gen.set_frequency(state['fg_freq'])
@@ -225,7 +225,7 @@ def run_fg_output():
 
             # Show live output values, wait for button to go back
             wait_for_back(lambda: (
-                "FG Output: ON",
+                "Output: ON",
                 f"Freq: {state['fg_freq']} Hz",
                 f"Amp:  {state['fg_amp']:.4f} V",
                 "Btn: back",
@@ -455,10 +455,10 @@ try:
     while True:
         choice = pick_menu(
             "Mode Select",
-            ["Function Gen", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
+            ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
         )
 
-        if choice == "Function Gen":
+        if choice == "Function Generator":
             result = run_function_generator_menu()
             # MAIN or BACK both return to top
 

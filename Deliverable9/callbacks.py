@@ -55,7 +55,7 @@ def _reset_input_flags():
 
 
 def _on_rotate(direction):
-    _s["encoder_delta"] = _s.get("encoder_delta", 0) + direction
+    _s["encoder_delta"] = _s.get("encoder_delta", 0) - direction
 
 
 def _on_button(_gpio, level, tick):
@@ -138,7 +138,7 @@ def adjust_value(title, value, min_val, max_val, step, fmt_fn):
     _s["button_press_tick"] = None
 
     def _adj_rotate(direction):
-        _s["encoder_delta"] = _s.get("encoder_delta", 0) + direction
+        _s["encoder_delta"] = _s.get("encoder_delta", 0) - direction
 
     def _adj_button(_gpio, level, tick):
         if level == 0:
