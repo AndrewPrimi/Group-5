@@ -89,9 +89,11 @@ pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
 pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
 
-# GPIO setup for comparators
+# GPIO setup for comparators (external pull-ups only — disable internal pulls)
 pi.set_mode(COMPARATOR1_PIN, pigpio.INPUT)
 pi.set_mode(COMPARATOR2_PIN, pigpio.INPUT)
+pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
+pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
 
 
 # ── Hardware objects ──────────────────────────────────────────────────────────
@@ -251,51 +253,61 @@ def run_fg_output():
 # ── Ohmmeter ──────────────────────────────────────────────────────────────────
 
 def run_ohmmeter():
-    """Live resistance reading. Button press returns."""
-    state['button_pressed'] = False
-    state['button_last_tick'] = None
-    clear_callbacks(state)
-
-    DEBOUNCE_US = 200_000
-
-    def _on_button(_gpio, level, tick):
-        if level != 0:
-            return
-        last = state.get('button_last_tick')
-        if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
-            return
-        state['button_last_tick'] = tick
-        state['button_pressed'] = True
-
-    lcd.put_line(0, "Ohmmeter")
-    lcd.put_line(1, "Measuring...")
-    lcd.put_line(2, "")
-    lcd.put_line(3, "Btn: back")
-
-    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
-    state['active_callbacks'] = [cb_btn]
-
-    last_update = 0.0
-    try:
-        while not state['button_pressed']:
-            now = time.time()
-            if now - last_update >= 0.5:
-                last_update = now
-                step = ohm_averaged_measure(pi, spi_ce1, COMPARATOR2_PIN, n=11)
-                resistance = step_to_resistance(step)
-                tol = ohm_tolerance(step)
-
-                lcd.put_line(0, "Ohmmeter")
-                lcd.put_line(1, f"R: {resistance:.0f} ohm")
-                lcd.put_line(2, f"+/- {tol:.0f} ohm")
-                lcd.put_line(3, "Btn: back")
-                print(f"[Ohmmeter] step={step}  R={resistance:.0f}  tol={tol:.0f}")
-            time.sleep(0.05)
-    finally:
+    """Live resistance reading with Back/Main options."""
+    while True:
+        # Show live measurement until user presses button
         state['button_pressed'] = False
+        state['button_last_tick'] = None
         clear_callbacks(state)
 
-    return "BACK"
+        DEBOUNCE_US = 200_000
+
+        def _on_button(_gpio, level, tick):
+            if level != 0:
+                return
+            last = state.get('button_last_tick')
+            if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
+                return
+            state['button_last_tick'] = tick
+            state['button_pressed'] = True
+
+        lcd.put_line(0, "Ohmmeter")
+        lcd.put_line(1, "Measuring...")
+        lcd.put_line(2, "")
+        lcd.put_line(3, "Btn: menu")
+
+        cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
+        state['active_callbacks'] = [cb_btn]
+
+        last_update = 0.0
+        try:
+            while not state['button_pressed']:
+                now = time.time()
+                if now - last_update >= 0.5:
+                    last_update = now
+                    step = ohm_averaged_measure(pi, spi_ce1, COMPARATOR2_PIN, n=11)
+                    resistance = step_to_resistance(step)
+                    tol = ohm_tolerance(step)
+
+                    lcd.put_line(0, "Ohmmeter")
+                    lcd.put_line(1, f"R: {resistance:.0f} ohm")
+                    lcd.put_line(2, f"+/- {tol:.0f} ohm")
+                    lcd.put_line(3, "Btn: menu")
+                    print(f"[Ohmmeter] step={step}  R={resistance:.0f}  tol={tol:.0f}")
+                time.sleep(0.05)
+        finally:
+            state['button_pressed'] = False
+            clear_callbacks(state)
+
+        # After button press, show Back/Main options
+        choice = pick_menu("Ohmmeter", ["Resume", "Back", "Main"])
+
+        if choice == "Resume":
+            continue
+        elif choice == "Back":
+            return "BACK"
+        elif choice == "Main":
+            return "MAIN"
 
 
 # ── Voltmeter ─────────────────────────────────────────────────────────────────
