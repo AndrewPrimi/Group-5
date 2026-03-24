@@ -11,9 +11,9 @@ Mode Select
    d. Output      -> On / Off / Back / Main
 2. Ohmmeter       -> live reading + Back / Main
 3. Voltmeter
-   a. Source      -> External / Int. Reference / Back / Main
+   a. Source      -> External / Internal Reference / Back / Main
 4. DC Reference
-   a. Set Voltage -> Input
+   a. Voltage Value Input -> Input
    b. Output      -> On / Off / Back / Main
    c. Back
    d. Main
@@ -163,7 +163,7 @@ def run_function_generator_menu():
 
 
 def run_fg_type():
-    choice = pick_menu("Waveform Type", ["Square", "Back", "Main"])
+    choice = pick_menu("Type", ["Square", "Back", "Main"])
     if choice == "Square":
         # Only square is supported; just confirm
         wait_for_back(lambda: (
@@ -334,14 +334,14 @@ def run_voltmeter_menu():
 def run_voltmeter_source():
     choice = pick_menu(
         "Volt Source",
-        ["External", "Int. Reference", "Back", "Main"],
+        ["External", "Internal Reference", "Back", "Main"],
     )
 
     if choice == "External":
         run_measurement(state, pi, lcd, spi_ce1, source_label="External")
         return "BACK"
 
-    elif choice == "Int. Reference":
+    elif choice == "Internal Reference":
         # Jump to DC Reference menu
         result = run_dc_reference_menu()
         return result
@@ -358,10 +358,10 @@ def run_dc_reference_menu():
     while True:
         choice = pick_menu(
             "DC Reference",
-            ["Set Voltage", "Output", "Back", "Main"],
+            ["Voltage Value Input", "Output", "Back", "Main"],
         )
 
-        if choice == "Set Voltage":
+        if choice == "Voltage Value Input":
             val = adjust_value(
                 "DC Voltage",
                 state['dc_voltage'],
