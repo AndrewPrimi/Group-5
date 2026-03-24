@@ -163,7 +163,7 @@ def run_function_generator_menu():
 
 
 def run_fg_type():
-    choice = pick_menu("Waveform Type", ["Square", "Back", "Main"])
+    choice = pick_menu("Type", ["Square", "Back", "Main"])
     if choice == "Square":
         # Only square is supported; just confirm
         wait_for_back(lambda: (
@@ -253,74 +253,94 @@ def run_fg_output():
 # ── Ohmmeter ──────────────────────────────────────────────────────────────────
 
 def run_ohmmeter():
-    """Live resistance reading with Back/Main options."""
-    while True:
-        # Show live measurement until user presses button
-        state['button_pressed'] = False
-        state['button_last_tick'] = None
-        clear_callbacks(state)
+    """Live resistance reading with Back/Main on the same screen."""
+    state['encoder_delta'] = 0
+    state['button_pressed'] = False
+    state['button_last_tick'] = None
+    clear_callbacks(state)
 
-        DEBOUNCE_US = 200_000
+    DEBOUNCE_US = 200_000
+    nav_options = ["Back", "Main"]
+    nav_idx = 0
 
-        def _on_button(_gpio, level, tick):
-            if level != 0:
-                return
-            last = state.get('button_last_tick')
-            if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
-                return
-            state['button_last_tick'] = tick
-            state['button_pressed'] = True
+    def _on_rotate(direction):
+        _delta = -direction  # match global inversion
+        state['encoder_delta'] = state.get('encoder_delta', 0) + _delta
 
-        lcd.put_line(0, "Ohmmeter")
-        lcd.put_line(1, "Measuring...")
-        lcd.put_line(2, "")
-        lcd.put_line(3, "Btn: menu")
+    def _on_button(_gpio, level, tick):
+        if level != 0:
+            return
+        last = state.get('button_last_tick')
+        if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
+            return
+        state['button_last_tick'] = tick
+        state['button_pressed'] = True
 
-        cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
-        state['active_callbacks'] = [cb_btn]
+    import rotary_encoder as _re
+    decoder = _re.decoder(pi, PIN_A, PIN_B, _on_rotate)
+    cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
+    state['active_callbacks'] = [decoder, cb_btn]
 
-        last_update = 0.0
-        try:
-            while not state['button_pressed']:
-                now = time.time()
-                if now - last_update >= 0.5:
-                    last_update = now
-                    step = ohm_averaged_measure(pi, spi_ce1, COMPARATOR2_PIN, n=11)
-                    resistance = step_to_resistance(step)
-                    tol = ohm_tolerance(step)
+    lcd.put_line(0, "Ohmmeter")
+    lcd.put_line(1, "Measuring...")
+    lcd.put_line(2, "")
+    lcd.put_line(3, "> Back   Main")
 
-                    lcd.put_line(0, "Ohmmeter")
+    last_update = 0.0
+    try:
+        while True:
+            # Handle encoder navigation between Back/Main
+            delta = state.get('encoder_delta', 0)
+            if delta != 0:
+                nav_idx = (nav_idx + delta) % len(nav_options)
+                state['encoder_delta'] = 0
+                if nav_idx == 0:
+                    lcd.put_line(3, "> Back   Main")
+                else:
+                    lcd.put_line(3, "  Back > Main")
+
+            # Handle button press — select Back or Main
+            if state.get('button_pressed'):
+                state['button_pressed'] = False
+                return "BACK" if nav_idx == 0 else "MAIN"
+
+            # Live measurement update
+            now = time.time()
+            if now - last_update >= 0.5:
+                last_update = now
+                step = ohm_averaged_measure(pi, spi_ce1, COMPARATOR2_PIN, n=11)
+                resistance = step_to_resistance(step)
+                tol = ohm_tolerance(step)
+
+                if resistance < 500 or resistance > 10000:
+                    lcd.put_line(1, "Reading is not")
+                    lcd.put_line(2, "in range")
+                else:
                     lcd.put_line(1, f"R: {resistance:.0f} ohm")
                     lcd.put_line(2, f"+/- {tol:.0f} ohm")
-                    lcd.put_line(3, "Btn: menu")
-                    print(f"[Ohmmeter] step={step}  R={resistance:.0f}  tol={tol:.0f}")
-                time.sleep(0.05)
-        finally:
-            state['button_pressed'] = False
-            clear_callbacks(state)
+                print(f"[Ohmmeter] step={step}  R={resistance:.0f}  tol={tol:.0f}")
 
-        # After button press, show Back/Main options
-        choice = pick_menu("Ohmmeter", ["Resume", "Back", "Main"])
-
-        if choice == "Resume":
-            continue
-        elif choice == "Back":
-            return "BACK"
-        elif choice == "Main":
-            return "MAIN"
+            time.sleep(0.05)
+    finally:
+        state['button_pressed'] = False
+        clear_callbacks(state)
 
 
 # ── Voltmeter ─────────────────────────────────────────────────────────────────
 
 def run_voltmeter_menu():
+    """Voltmeter -> Source -> External / Internal Reference / Back / Main."""
     while True:
         choice = pick_menu(
-            "Voltmeter",
-            ["Source", "Back", "Main"],
+            "Source",
+            ["External", "Internal Reference", "Back", "Main"],
         )
 
-        if choice == "Source":
-            result = run_voltmeter_source()
+        if choice == "External":
+            run_measurement(state, pi, lcd, spi_ce1, source_label="External")
+
+        elif choice == "Internal Reference":
+            result = run_dc_reference_menu()
             if result == "MAIN":
                 return "MAIN"
 
@@ -331,37 +351,16 @@ def run_voltmeter_menu():
             return "MAIN"
 
 
-def run_voltmeter_source():
-    choice = pick_menu(
-        "Volt Source",
-        ["External", "Int. Reference", "Back", "Main"],
-    )
-
-    if choice == "External":
-        run_measurement(state, pi, lcd, spi_ce1, source_label="External")
-        return "BACK"
-
-    elif choice == "Int. Reference":
-        # Jump to DC Reference menu
-        result = run_dc_reference_menu()
-        return result
-
-    elif choice == "Main":
-        return "MAIN"
-
-    return "BACK"
-
-
 # ── DC Reference ──────────────────────────────────────────────────────────────
 
 def run_dc_reference_menu():
     while True:
         choice = pick_menu(
             "DC Reference",
-            ["Set Voltage", "Output", "Back", "Main"],
+            ["Voltage Value Input", "Output", "Back", "Main"],
         )
 
-        if choice == "Set Voltage":
+        if choice == "Voltage Value Input":
             val = adjust_value(
                 "DC Voltage",
                 state['dc_voltage'],
