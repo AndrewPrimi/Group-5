@@ -15,13 +15,14 @@ AMP_STEP = 0.3125
 CMD_W0 = 0x00
 MAX_WIPER = 128
 
-# Circuit parameters for amplitude calculation:
-#   PWM (3.3V) → MCP4131 voltage divider → 470µF DC-blocking cap
-#   → 100kΩ bias to GND → 10kΩ into TL081 inverting amp (70kΩ feedback)
-#   Gain magnitude = 70k / 10k = 7
-#   Output peak = GAIN * V_PWM * wiper_step / (2 * MAX_WIPER)
-V_PWM = 3.3
-AMP_GAIN = 7.0
+# Empirical calibration from scope measurements:
+#   Step 28 → 4.8 Vpp,  Step 55 → 8.8 Vpp,  Step 111 → 17.5 Vpp
+# Linear regression: Vpp = CAL_SLOPE * step + CAL_OFFSET
+# The 470µF DC-blocking cap and 100kΩ bias cause some voltage runaway
+# at higher amplitudes, so the theoretical gain (7.0) doesn't hold —
+# this empirical fit accounts for that.
+CAL_SLOPE = 0.1534
+CAL_OFFSET = 0.45
 
 SETTLE_TIME = 0.01
 
@@ -34,11 +35,13 @@ def _amp_to_step(amplitude):
     """
     Convert peak amplitude (0–10 V) to MCP4131 wiper step (0–128).
 
-    Output peak = AMP_GAIN * V_PWM * step / (2 * MAX_WIPER)
-    Solving for step: step = amplitude * 2 * MAX_WIPER / (AMP_GAIN * V_PWM)
+    Uses empirical calibration: Vpp = CAL_SLOPE * step + CAL_OFFSET
+    Desired Vpp = 2 * amplitude, so step = (2 * amplitude - CAL_OFFSET) / CAL_SLOPE
     """
     amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
-    step = round(amplitude * 2 * MAX_WIPER / (AMP_GAIN * V_PWM))
+    if amplitude <= 0.0:
+        return 0
+    step = round((2.0 * amplitude - CAL_OFFSET) / CAL_SLOPE)
     return int(_clamp(step, 0, MAX_WIPER))
 
 
