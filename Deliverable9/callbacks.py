@@ -93,7 +93,7 @@ def _draw_menu(title, options, idx):
     for row in range(3):
         i = window_start + row
         if i < n:
-            prefix = "> " if i == idx else "  "
+            prefix = ">" if i == idx else " "
             _lcd.put_line(row + 1, prefix + options[i])
         else:
             _lcd.put_line(row + 1, "")
