@@ -21,8 +21,9 @@ import pigpio
 import rotary_encoder
 import ohms_steps
 
-PIN_A = 22
-PIN_B = 27
+# Rotary encoder GPIO pin assignments (active-low with pull-ups) 
+PIN_A = 22   # CLK
+PIN_B = 27   # DT
 ROTARY_BTN_PIN = 17
 
 BUTTON_DEBOUNCE_US = 200_000
@@ -34,119 +35,238 @@ _lcd = None
 
 
 def setup_callbacks(state, pi, lcd):
+    """Inject shared state, pigpio instance, and LCD into this module.
+
+    Must be called once from main.py before any callback fires.
     """
-    Store shared references so helpers in this file can access the
-    application state, pigpio instance, and LCD object.
-    """
-    global _state, _pi, _lcd
-    _state = state
+    global _s, _pi, _lcd
+    _s = state
     _pi = pi
     _lcd = lcd
 
+    
+def clear_callbacks(state):
+    print("CLEAR CALLBACKS")
+    """Cancel all active pigpio callbacks and clear the list."""
+    for c in state['active_callbacks']:
+        c.cancel()
+    state['active_callbacks'] = []
 
-def clear_callbacks(state=None):
+    
+# CHECKPOINT C
+
+
+def pot_menu_direction_callback(direction):
+    """Toggle the highlighted pot on each encoder detent.
+
+    Flips menu_selection between 0 (Pot 1) and 1 (Pot 2) and
+    redraws the cursor arrow on the LCD.
     """
-    Cancel all active callbacks / rotary decoders.
+    _s['menu_selection'] = 1 - _s['menu_selection']
 
-    Compatible with:
-        clear_callbacks()
-        clear_callbacks(state)
-    """
-    target = state if state is not None else _state
-    if target is None:
-        return
-
-    for cb in target.get("active_callbacks", []):
-        try:
-            cb.cancel()
-        except Exception:
-            pass
-
-    target["active_callbacks"] = []
+    # Redraw menu with the arrow on the newly selected item
+    if _s['menu_selection'] == 0:
+        _lcd.put_line(1, '> Pot 1')
+        _lcd.put_line(2, '  Pot 2')
+    else:
+        _lcd.put_line(1, '  Pot 1')
+        _lcd.put_line(2, '> Pot 2')
 
 
-def _reset_input_flags():
-    _state["encoder_delta"] = 0
-    _state["button_pressed"] = False
-    _state["button_held"] = False
-    _state["button_press_tick"] = None
+def pot_menu_button_callback(gpio, level, tick):
+    """Confirm pot selection when the encoder button is pressed.
 
-
-def _button_cb(_gpio, level, tick):
-    """
-    Generic pushbutton callback:
-      falling edge -> start press timing
-      rising edge  -> mark short press or hold
+    Uses tick-based debouncing (BUTTON_DEBOUNCE_US) to ignore bounce.
+    On a clean press (level == 0), records the chosen pot and exits
+    the main-page loop by clearing isMainPage.
     """
     if level == 0:
-        last = _state.get("button_last_tick")
-        if last is not None and pigpio.tickDiff(last, tick) < BUTTON_DEBOUNCE_US:
-            return
-        _state["button_last_tick"] = tick
-        _state["button_press_tick"] = tick
-
-    elif level == 1:
-        press_tick = _state.get("button_press_tick")
-        if press_tick is None:
-            return
-
-        held_us = pigpio.tickDiff(press_tick, tick)
-        if held_us >= HOLD_US:
-            _state["button_held"] = True
-        else:
-            _state["button_pressed"] = True
-
-        _state["button_press_tick"] = None
+        # Software debounce: ignore presses that arrive too quickly
+        if _s['button_last_tick'] is not None:
+            if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
+                return
+        _s['button_last_tick'] = tick
+        _s['selected_pot'] = _s['menu_selection']   # 0 or 1
+        _s['isMainPage'] = False                    # break out of main-page loop
 
 
-def _encoder_cb(direction):
+def varconst_direction_callback(direction):
+    """Toggle between Variable and Constant on each encoder detent.
+
+    Works identically to menu_direction_callback but for the
+    resistance-type selection screen.
     """
-    Generic rotary movement callback from rotary_encoder.decoder.
-    """
-    _state["encoder_delta"] = _state.get("encoder_delta", 0) + direction
+    _s['var_const_selection'] = 1 - _s['var_const_selection']
 
-
-def attach_input_callbacks():
-    """
-    Attach generic rotary/button handlers and store them in state.
-    """
-    clear_callbacks()
-    decoder = rotary_encoder.decoder(_pi, PIN_A, PIN_B, _encoder_cb)
-    cb_btn = _pi.callback(ROTARY_BTN_PIN, pigpio.EITHER_EDGE, _button_cb)
-    _state["active_callbacks"] = [decoder, cb_btn]
-
-
-def draw_menu(title, options, selected_idx):
-    """
-    Draw a scrolling 3-option window under a 1-line title.
-
-    LCD layout:
-      row 0 = title
-      row 1..3 = visible options
-    """
-    title = str(title)[:20]
-    _lcd.put_line(0, title)
-
-    if not options:
-        for row in range(1, 4):
-            _lcd.put_line(row, "")
-        return
-
-    # Keep selected item centered when possible
-    if len(options) <= 3:
-        start = 0
+    if _s['var_const_selection'] == 0:
+        _lcd.put_line(1, '> Variable')
+        _lcd.put_line(2, '  Constant')
     else:
-        start = max(0, min(selected_idx - 1, len(options) - 3))
-
-    for row in range(3):
-        i = start + row
-        if i < len(options):
-            prefix = ">" if i == selected_idx else " "
-            _lcd.put_line(row + 1, f"{prefix} {options[i]}"[:20])
-        else:
-            _lcd.put_line(row + 1, "")
+        _lcd.put_line(1, '  Variable')
+        _lcd.put_line(2, '> Constant')
 
 
+def varconst_button_callback(gpio, level, tick):
+    """Confirm variable/constant choice on button press.
+
+    Debounces identically to menu_button_callback, then exits the
+    var/const page loop by clearing isVarConstPage.
+    """
+    if level == 0:
+        if _s['button_last_tick'] is not None:
+            if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
+                return
+        _s['button_last_tick'] = tick
+        _s['isVarConstPage'] = False
+
+
+def constant_direction_callback(direction):
+    """Cycle through the four constant resistance presets (100, 1k, 5k, 10k).
+
+    Wraps around using modulo so the user can keep spinning.
+    """
+    _s['constant_selection'] = (_s['constant_selection'] + 1) % 4
+    label = CONSTANT_LABELS[_s['constant_selection']]
+    _lcd.put_line(1, f'Value: {label} Ohms')
+    _lcd.put_line(2, '')
+    _lcd.put_line(3, '')
+
+
+def constant_button_callback(gpio, level, tick):
+    """Handle button press/release on the constant-selection page.
+
+    Press  (level 0): debounce, convert chosen preset to a step value,
+                      write it to the MCP4231, and update the LCD.
+    Release (level 1): if the button was held >= 3 seconds, reset the
+                       digipot to DEFAULT_OHMS and return to the main page.
+    """
+    if level == 0:
+        # Debounce
+        if _s['button_last_tick'] is not None:
+            if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
+                return
+        _s['button_last_tick'] = tick
+        _s['button_press_tick'] = tick        # record press time for hold detection
+
+        # Convert the selected preset to a step and send over SPI
+        ohms_value = CONSTANT_OHMS[_s['constant_selection']]
+        step = ohms_to_step(ohms_value)
+        _set_digipot_step(step)
+        
+        _s['pot_values'][_s['selected_pot']] = ohms_value
+        _s['ohms'] = ohms_value   # save value to selected pot 
+                
+        # Show confirmation on LCD
+        label = CONSTANT_LABELS[_s['constant_selection']]
+        _lcd.put_line(2, 'Value set!')
+        _lcd.put_line(3, f'{label} Ohms -> Pot {_s["selected_pot"] + 1}')
+        print(f'Constant value set: {label} Ohms')
+
+    elif level == 1 and _s['button_press_tick'] is not None:
+        # Button released – check for long hold (>= 2 s)
+        hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
+        _s['button_press_tick'] = None
+        if hold_time >= 2_000_000:
+            # Long hold: reset digipot and navigate back to main page
+            #_set_digipot_step(ohms_to_step(DEFAULT_OHMS))
+            _s['isMainPage'] = True
+
+
+def callback_set_digi(gpio, level, tick):
+    """Handle button press/release on the variable pot control page.
+
+    Press  (level 0): debounce, convert current ohms to a step, send to
+                      MCP4231, and confirm on LCD.
+    Release (level 1): if held >= 2 seconds, reset to DEFAULT_OHMS and
+                       return to the main page.
+    """
+    if level == 0:
+        # Debounce
+        if _s['button_last_tick'] is not None:
+            if pigpio.tickDiff(_s['button_last_tick'], tick) < BUTTON_DEBOUNCE_US:
+                return
+        _s['button_last_tick'] = tick
+
+        _s['button_press_tick'] = tick   # start timing for long-press
+        step = ohms_to_step(_s['ohms'])
+        _set_digipot_step(step)
+        _s['pot_values'][_s['selected_pot']] = _s['ohms'] # save to selected pot
+        _lcd.put_line(2, 'Value set!')
+        _lcd.put_line(3, f'Pot {_s["selected_pot"] + 1} updated')
+        print('Button pressed! Value sent to digi pot.')
+
+    elif level == 1 and _s['button_press_tick'] is not None:
+        # Button released – check for long hold (>= 2 s)
+        hold_time = pigpio.tickDiff(_s['button_press_tick'], tick)
+        _s['button_press_tick'] = None
+        if hold_time >= 2_000_000:  # 2 seconds
+            #_s['ohms'] = DEFAULT_OHMS
+            #_set_digipot_step(ohms_to_step(DEFAULT_OHMS))
+            _s['isMainPage'] = True
+
+
+def pot_direction_callback(direction):
+    """Handle rotary encoder rotation on the variable pot control page.
+
+    Flips direction to match encoder wiring, calculates rotation speed
+    (detents/sec) from the time since the last detent, and passes both
+    to _change_steps() for acceleration-aware adjustment.
+    """
+    direction = -direction  # flip to match encoder wiring
+    now = time.time()
+    if _s['last_time'] is not None:
+        dt = now - _s['last_time']          # seconds since last detent
+        speed = min(1.0 / dt, 1000)         # cap at 1000 detents/sec
+        _change_steps(direction, speed)
+    _s['last_time'] = now
+
+
+def _change_steps(direction, speed):
+    """Adjust the target ohms value based on encoder direction and speed.
+
+    Slow rotation (< 10 det/s)  -> fine adjustment   (+/- 10 ohms)
+    Fast rotation (>= 10 det/s) -> coarse adjustment  (+/- 100 ohms)
+    Clamps the result to [MINIMUM_OHMS, MAXIMUM_OHMS] and updates the LCD.
+    """
+    if speed < 10:
+        change = 10      # fine
+    else:
+        change = 100     # coarse
+
+    resulting_ohms = _s['ohms'] + change * direction
+    if MINIMUM_OHMS <= resulting_ohms <= MAXIMUM_OHMS:
+        _s['ohms'] = resulting_ohms
+        step = ohms_to_step(_s['ohms'])
+        _lcd.put_line(1, f'Ohms: {resulting_ohms}')
+        print(f"Current Ohms: {_s['ohms']}")
+    else:
+        print("ohm value is out of range...")
+
+def _set_digipot_step(step_value):
+    """Write a wiper step to the MCP4231 digital potentiometer over SPI.
+
+    The MCP4231 has two wipers addressed by different command bytes:
+      0x00 = Wiper 0 (Pot 1)
+      0x10 = Wiper 1 (Pot 2)
+    The selected pot is determined by state['selected_pot'].
+    """
+    from ohms_steps import MAX_STEPS
+    if 0 <= step_value <= MAX_STEPS:
+        #cmd = 0x00 if _s['selected_pot'] == 0 else 0x10 # choosing which digi pot to use
+        #cmd = 0x11 if _s['selected_pot'] == 0 else 0x12 # choosing which digi pot to use
+        cmd = 0x12
+        _pi.spi_write(_s['spi_handle'], [cmd, step_value])
+        approx_ohms = step_to_ohms(step_value)
+        
+        print(
+            f"Pot {_s['selected_pot'] + 1} | Step: {step_value:3d} | Approx: {approx_ohms:7.1f} Ohms")
+    else:
+        print(f"Invalid step: {step_value} (must be 0-{MAX_STEPS})")
+
+
+# Menu + Rotary Encoder callbacks
+        
+     
 def pick_menu(title, options, start_idx=0):
     """
     Generic rotary menu.
@@ -174,163 +294,3 @@ def pick_menu(title, options, start_idx=0):
             time.sleep(0.02)
     finally:
         clear_callbacks()
-
-
-def adjust_value(title, value, min_val, max_val, step, formatter=str):
-    """
-    Generic rotary numeric adjuster.
-
-    Short press confirms.
-    Hold cancels and returns None.
-    """
-    _reset_input_flags()
-    attach_input_callbacks()
-
-    def redraw():
-        _lcd.put_line(0, str(title)[:20])
-        _lcd.put_line(1, str(formatter(value))[:20])
-        _lcd.put_line(2, "Rotate to adjust"[:20])
-        _lcd.put_line(3, "Btn=OK Hold=Cancel"[:20])
-
-    redraw()
-
-    try:
-        while True:
-            delta = _state.get("encoder_delta", 0)
-            if delta != 0:
-                value += delta * step
-                value = max(min_val, min(max_val, value))
-                # snap to step cleanly
-                value = round(round(value / step) * step, 10)
-                _state["encoder_delta"] = 0
-                redraw()
-
-            if _state.get("button_pressed"):
-                _state["button_pressed"] = False
-                return value
-
-            if _state.get("button_held"):
-                _state["button_held"] = False
-                return None
-
-            time.sleep(0.02)
-    finally:
-        clear_callbacks()
-
-
-def wait_for_back_page(lines_getter, refresh_s=0.25):
-    """
-    Show a live page until short press or hold.
-
-    lines_getter must return a tuple/list of 4 strings.
-    """
-    _reset_input_flags()
-    attach_input_callbacks()
-    last = 0.0
-
-    try:
-        while True:
-            now = time.time()
-            if now - last >= refresh_s:
-                last = now
-                lines = lines_getter()
-                for row in range(4):
-                    text = lines[row] if row < len(lines) else ""
-                    _lcd.put_line(row, str(text)[:20])
-
-            if _state.get("button_pressed") or _state.get("button_held"):
-                _state["button_pressed"] = False
-                _state["button_held"] = False
-                return
-
-            time.sleep(0.02)
-    finally:
-        clear_callbacks()
-
-
-def run_ohmmeter():
-    """
-    Entry point for ohmmeter control.
-
-    Uses:
-    - Variable resistance mode (adjust freely)
-    - Constant presets (100, 1k, 5k, 10k)
-    """
-    while True:
-        choice = pick_menu(
-            "OHMMETER",
-            ["Variable", "Constant", "Back"]
-        )
-
-        if choice == "Variable":
-            run_variable_ohms()
-
-        elif choice == "Constant":
-            run_constant_ohms()
-
-        elif choice == "Back":
-            return
-
-        
-def run_variable_ohms():
-    """
-    Rotary adjustment of resistance using interpolation-backed conversion.
-    """
-    value = _state.get("ohms", ohms_steps.DEFAULT_OHMS)
-
-    while True:
-        new_val = adjust_value(
-            "OHMS",
-            value,
-            ohms_steps.MINIMUM_OHMS,
-            ohms_steps.MAXIMUM_OHMS,
-            10,  # matches your 10-ohm resolution idea
-            lambda v: f"{int(v)} ohm"
-        )
-
-        if new_val is None:
-            return
-
-        value = int(new_val)
-        _state["ohms"] = value
-
-        step = ohms_steps.ohms_to_step(value)
-
-        # Store for other modules (SPI writer, etc.)
-        _state["digipot_step"] = step
-
-        # Optional live confirmation page
-        wait_for_back_page(lambda: (
-            "OHMMETER ACTIVE",
-            f"Set: {value} ohm",
-            f"Step: {step}",
-            "Btn: Back"
-        ))
-
-        
-def run_constant_ohms():
-    """
-    Select from predefined resistance values.
-    """
-    while True:
-        choice = pick_menu(
-            "CONST OHMS",
-            ohms_steps.CONSTANT_LABELS + ["Back"]
-        )
-
-        if choice == "Back":
-            return
-
-        idx = ohms_steps.CONSTANT_LABELS.index(choice)
-        value = ohms_steps.CONSTANT_OHMS[idx]
-
-        _state["ohms"] = value
-        step = ohms_steps.ohms_to_step(value)
-        _state["digipot_step"] = step
-
-        wait_for_back_page(lambda: (
-            "CONST MODE",
-            f"Set: {value} ohm",
-            f"Step: {step}",
-            "Btn: Back"
-        ))

@@ -47,16 +47,20 @@ import time
 import pigpio
 
 import i2c_lcd
+import rotary_encoder
 
 from callbacks import (
     PIN_A,
     PIN_B,
     ROTARY_BTN_PIN,
+    
     setup_callbacks,
+    clear_callbacks,
+    
     pick_menu,
     adjust_value,
     wait_for_back_page,
-    clear_callbacks,
+
 )
 
 from ohmmeter import (
@@ -79,95 +83,106 @@ from ohms_steps import (
 from dc_reference import DCReferenceGenerator
 from sar_logic import SAR_ADC
 
-# Optional function generator integration
-try:
-    from square_wave import (
-        SquareWaveGenerator,
-        MIN_FREQ,
-        MAX_FREQ,
-        FREQ_STEP,
-        MAX_AMP,
-    )
-    HAVE_SQUARE_WAVE = True
-except Exception:
-    SquareWaveGenerator = None
-    MIN_FREQ = 100
-    MAX_FREQ = 10000
-    FREQ_STEP = 10
-    MAX_AMP = 10.0
-    HAVE_SQUARE_WAVE = False
+# square wave stuff
+
+# ── Hardware setup ──────────────────────────────────────
+
+# GPIO pin for the rotary encoder's built-in push-button 
+rotaryEncoder_pin = 17
+
+# Connect to the pigpio daemon 
+pi = pigpio.pi()
+if not pi.connected:
+    exit()
+
+# Initialise the 20x4 I2C LCD (PCF8574T backpack, default address 0x27)
+lcd = i2c_lcd.lcd(pi, width=20)
+
+# Open SPI for the MCP4231 dual digital potentiometer
+spi_handle = pi.spi_open(SPI_CHANNEL, SPI_SPEED, SPI_FLAGS)
+print(f"SPI handle: {spi_handle}")
+
+# ── Hardware setup ──────────────────────────────────────
+
+# GPIO pin for the rotary encoder's built-in push-button 
+rotaryEncoder_pin = 17
+
+# Connect to the pigpio daemon 
+pi = pigpio.pi()
+if not pi.connected:
+    exit()
+
+# Initialise the 20x4 I2C LCD (PCF8574T backpack, default address 0x27)
+lcd = i2c_lcd.lcd(pi, width=20)
+
+# Open SPI for the MCP4231 dual digital potentiometer
+spi_handle = pi.spi_open(SPI_CHANNEL, SPI_SPEED, SPI_FLAGS)
+print(f"SPI handle: {spi_handle}")
+
+# Shared state dictionary
+# Passed to callbacks.py so interrupt handlers can read/write program state.
+state = {
+    'ohms': DEFAULT_OHMS,                        # current target resistance (variable mode)
+    'selected_pot': 0,                           # 0 = Pot 1, 1 = Pot 2
+    'pot_values': [DEFAULT_OHMS, DEFAULT_OHMS],  # [Pot 1 Value, Pot 2 Value]
+    'menu_selection': 0,                         # highlighted item on the main page
+    'isMainPage': True,                          # flag: currently on main page?
+    'isVarConstPage': False,                     # flag: currently on var/const page?
+    'var_const_selection': 0,                    # 0 = Variable, 1 = Constant
+    'constant_selection': 0,                     # index into CONSTANT_OHMS presets
+    'last_time': None,                           # timestamp of last encoder detent (speed calc)
+    'button_press_tick': None,                   # tick when button was pressed (hold detection)
+    'button_last_tick': None,                    # tick of last accepted press (debounce)
+    'spi_handle': spi_handle,                    # pigpio SPI handle for MCP4231
+    'active_callbacks': [],                      # list of pigpio callbacks to cancel on page change
+
+    'pot_mode_on': False,
+    'ohmmeter_mode_on': False,
+    'voltmeter_mode_on': False,
+    'function_generator_mode_on': False,
+    'dc_reference_mode_on': False,
+    
+}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Hardware constants
-# ─────────────────────────────────────────────────────────────────────────────
+# Encoder A/B channels
+pi.set_mode(PIN_A, pigpio.INPUT)
+pi.set_mode(PIN_B, pigpio.INPUT)
+pi.set_pull_up_down(PIN_A, pigpio.PUD_UP)
+pi.set_pull_up_down(PIN_B, pigpio.PUD_UP)
 
-MEASURE_INTERVAL = 0.4
+# Encoder button 
+pi.set_mode(rotaryEncoder_pin, pigpio.INPUT)
+pi.set_pull_up_down(rotaryEncoder_pin, pigpio.PUD_UP)
 
-# CE1 used by open_adc() for measurement-side digipot / SAR path
-# CE0 used separately for bipolar DC reference
-DCREF_SPI_CHANNEL = 0
-DCREF_SPI_SPEED = 50_000
-DCREF_SPI_FLAGS = 0
+# 10 ms glitch filter on the button pin only.
+# The encoder channels are debounced by the Gray-code state machine in
+# rotary_encoder.decoder, so they don't need a glitch filter.
+pi.set_glitch_filter(rotaryEncoder_pin, 10000)
 
-VOLT_COMPARATOR_PIN = 23
-VOLT_VREF = 5.0
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Formatting helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def fmt_ohms(value):
-    if value == float("inf"):
-        return "Open"
-    if value >= 1000:
-        return f"{value / 1000:.2f}k"
-    return f"{value:.0f}"
+# Inject hardware references into the callbacks module
+setup_callbacks(state, pi, lcd)
 
 
-def fmt_volts(value):
-    return f"{value:+.2f}V"
+# Objects
+sar_adc = SAR_ADC(
+    pi=pi,
+    spi_handle=adc_handle,
+    comparator_pin=VOLT_COMPARATOR_PIN,
+    selected_pot=0,
+    settle_time=0.002,
+    invert_comparator=False,
+)
+
+dc_ref = DCReferenceGenerator(
+    pi=pi,
+    spi_handle=dc_spi_handle,
+    settle_time=0.001,
+)
 
 
-def fmt_hz(value):
-    return f"{int(round(value))} Hz"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Function generator wrappers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def fg_apply_settings(state):
-    gen = state.get("fg_obj")
-    if gen is None:
-        return
-
-    freq = state["fg_frequency"]
-    amp = state["fg_amplitude"]
-
-    # Try common method names safely.
-    for method_name in ("set_frequency", "set_freq"):
-        method = getattr(gen, method_name, None)
-        if callable(method):
-            try:
-                method(freq)
-            except Exception:
-                pass
-            break
-
-    for method_name in ("set_amplitude", "set_amp"):
-        method = getattr(gen, method_name, None)
-        if callable(method):
-            try:
-                method(amp)
-            except Exception:
-                pass
-            break
-
-
-def fg_start(state):
-    gen = state.get("fg_obj")
+def pot_start(state):
+    gen = state.get("pot_mode_on")
     if gen is None:
         return
     fg_apply_settings(state)
@@ -178,303 +193,8 @@ def fg_start(state):
         state["fg_output_on"] = False
 
 
-def fg_stop(state):
-    gen = state.get("fg_obj")
-    if gen is None:
-        state["fg_output_on"] = False
-        return
-    try:
-        gen.stop()
-    except Exception:
-        pass
-    state["fg_output_on"] = False
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Ohmmeter helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_ohm_lines(pi, adc_handle):
-    step = ohm_averaged_measure(pi, adc_handle, OHM_COMPARATOR_PIN, n=11)
-
-    if step <= 0:
-        return (
-            "Ohmmeter",
-            "Reading: Open",
-            "Threshold: ---",
-            "Btn: Back",
-        )
-
-    if step >= MCP4131_MAX_STEPS:
-        return (
-            "Ohmmeter",
-            "Reading: Short",
-            "Threshold: ---",
-            "Btn: Back",
-        )
-
-    measured = step_to_resistance(step)
-    tol = ohm_tolerance(step)
-
-    mapped_code = round(step * 127 / MCP4131_MAX_STEPS)
-    approx_pot_ohms = fix_ohms(step_to_ohms(mapped_code))
-
-    if measured < MINIMUM_OHMS:
-        threshold = f"Below {MINIMUM_OHMS} ohm"
-    elif measured > MAXIMUM_OHMS:
-        threshold = f"Above {MAXIMUM_OHMS//1000}0k ohm"
-    else:
-        threshold = f"+/- {fmt_ohms(tol)}"
-
-    return (
-        "Ohmmeter",
-        f"R: {fmt_ohms(measured)}",
-        threshold[:20],
-        f"S:{step:02d} P:{fmt_ohms(approx_pot_ohms)}"[:20],
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Voltmeter helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_volt_lines(state):
-    sar = state["sar_adc"]
-    voltage, step = sar.read_voltage(VOLT_VREF)
-    source = state.get("volt_source_label", "External")
-
-    return (
-        "Voltmeter",
-        f"Src: {source}"[:20],
-        f"Vin: {fmt_volts(voltage)}  S:{step}"[:20],
-        "Thr: +/-0.15 V",
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DC reference helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def dc_apply_voltage(state):
-    dc_ref = state.get("dc_ref_obj")
-    if dc_ref is None:
-        return
-    dc_ref.set_voltage(state["dc_voltage"])
-
-
-def dc_start(state):
-    dc_ref = state.get("dc_ref_obj")
-    if dc_ref is None:
-        return
-    dc_ref.set_voltage(state["dc_voltage"])
-    dc_ref.start()
-    state["dc_output_on"] = True
-
-
-def dc_stop(state):
-    dc_ref = state.get("dc_ref_obj")
-    if dc_ref is None:
-        state["dc_output_on"] = False
-        return
-    dc_ref.stop()
-    state["dc_output_on"] = False
-
-
-def build_dc_output_lines(state):
-    # Use the voltmeter SAR path to display generated output, per your requirement.
-    sar = state["sar_adc"]
-    voltage, step = sar.read_voltage(VOLT_VREF)
-
-    return (
-        "DC Ref Output",
-        f"Set: {fmt_volts(state['dc_voltage'])}"[:20],
-        f"Read:{fmt_volts(voltage)}"[:20],
-        f"Step:{step} Btn:Back"[:20],
-    )
-
-
-def build_fg_output_lines(state):
-    return (
-        "Function Output",
-        f"Type: {state['fg_type']}"[:20],
-        f"F:{fmt_hz(state['fg_frequency'])}"[:20],
-        f"A:{state['fg_amplitude']:.1f}V Btn"[:20],
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Menus
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_function_generator_menu(state):
-    while True:
-        choice = pick_menu(
-            "Function Generator",
-            ["Type", "Frequency", "Amplitude", "Output", "Back", "Main"],
-        )
-
-        if choice == "Type":
-            result = pick_menu("Type", ["Square", "Back", "Main"])
-            if result == "Square":
-                state["fg_type"] = "Square"
-            elif result == "Main":
-                fg_stop(state)
-                return "MAIN"
-
-        elif choice == "Frequency":
-            result = pick_menu("Frequency", ["Input Frequency", "Back", "Main"])
-            if result == "Input Frequency":
-                new_val = adjust_value(
-                    "Input Frequency",
-                    state["fg_frequency"],
-                    MIN_FREQ,
-                    MAX_FREQ,
-                    FREQ_STEP,
-                    fmt_hz,
-                )
-                if new_val is not None:
-                    state["fg_frequency"] = int(new_val)
-                    fg_apply_settings(state)
-            elif result == "Main":
-                fg_stop(state)
-                return "MAIN"
-
-        elif choice == "Amplitude":
-            result = pick_menu("Amplitude", ["Input Amplitude", "Back", "Main"])
-            if result == "Input Amplitude":
-                new_val = adjust_value(
-                    "Input Amplitude",
-                    state["fg_amplitude"],
-                    0.0,
-                    MAX_AMP,
-                    0.1,
-                    lambda v: f"{v:.1f} V",
-                )
-                if new_val is not None:
-                    state["fg_amplitude"] = float(new_val)
-                    fg_apply_settings(state)
-            elif result == "Main":
-                fg_stop(state)
-                return "MAIN"
-
-        elif choice == "Output":
-            out_choice = pick_menu("FG Output", ["On", "Off", "Back", "Main"])
-
-            if out_choice == "On":
-                fg_start(state)
-                wait_for_back_page(lambda: build_fg_output_lines(state), refresh_s=0.25)
-                # per your requirement, leaving the live output page turns it off by default
-                fg_stop(state)
-
-            elif out_choice == "Off":
-                fg_stop(state)
-
-            elif out_choice == "Main":
-                fg_stop(state)
-                return "MAIN"
-
-        elif choice == "Back":
-            fg_stop(state)
-            return "BACK"
-
-        elif choice == "Main":
-            fg_stop(state)
-            return "MAIN"
-
-
-def run_ohmmeter_menu(state, pi, adc_handle):
-    while True:
-        choice = pick_menu("Ohmmeter", ["Back", "Main"])
-
-        if choice == "Back":
-            # Show live reading first, then go back one level
-            wait_for_back_page(lambda: build_ohm_lines(pi, adc_handle), refresh_s=MEASURE_INTERVAL)
-            return "BACK"
-
-        elif choice == "Main":
-            wait_for_back_page(lambda: build_ohm_lines(pi, adc_handle), refresh_s=MEASURE_INTERVAL)
-            return "MAIN"
-
-
-def run_ohmmeter_live(state, pi, adc_handle):
-    wait_for_back_page(lambda: build_ohm_lines(pi, adc_handle), refresh_s=MEASURE_INTERVAL)
-
-
-def run_voltmeter_menu(state):
-    while True:
-        choice = pick_menu("Voltmeter", ["Source", "Back", "Main"])
-
-        if choice == "Source":
-            src = pick_menu("Source", ["External", "Internal Ref", "Back", "Main"])
-
-            if src == "External":
-                state["volt_source_label"] = "External"
-                wait_for_back_page(lambda: build_volt_lines(state), refresh_s=MEASURE_INTERVAL)
-
-            elif src == "Internal Ref":
-                state["volt_source_label"] = "Int Ref"
-                result = run_dc_reference_menu(state, from_voltmeter=True)
-                if result == "MAIN":
-                    return "MAIN"
-
-            elif src == "Main":
-                return "MAIN"
-
-        elif choice == "Back":
-            return "BACK"
-
-        elif choice == "Main":
-            return "MAIN"
-
-
-def run_dc_reference_menu(state, from_voltmeter=False):
-    while True:
-        choice = pick_menu(
-            "DC Reference",
-            ["Voltage Input", "Output", "Back", "Main"],
-        )
-
-        if choice == "Voltage Input":
-            new_val = adjust_value(
-                "Voltage Value Input",
-                state["dc_voltage"],
-                -5.0,
-                5.0,
-                0.1,
-                lambda v: f"{v:+.1f} V",
-            )
-            if new_val is not None:
-                state["dc_voltage"] = float(new_val)
-                dc_apply_voltage(state)
-
-        elif choice == "Output":
-            out_choice = pick_menu("DC Output", ["On", "Off", "Back", "Main"])
-
-            if out_choice == "On":
-                dc_start(state)
-                wait_for_back_page(lambda: build_dc_output_lines(state), refresh_s=MEASURE_INTERVAL)
-                # per your requirement, backing out turns it off by default
-                dc_stop(state)
-
-            elif out_choice == "Off":
-                dc_stop(state)
-
-            elif out_choice == "Main":
-                dc_stop(state)
-                return "MAIN"
-
-        elif choice == "Back":
-            dc_stop(state)
-            return "BACK"
-
-        elif choice == "Main":
-            dc_stop(state)
-            return "MAIN"
-
-        
-# ─────────────────────────────────────────────────────────────
 # Potentiometer Menu
-# ─────────────────────────────────────────────────────────────
 
 def run_potentiometer_menu(state):
     while True:
@@ -548,170 +268,147 @@ def run_pot_constant(state):
         "Btn: Back",
     ))
 
-        
 
-def run_main_menu(state, pi, adc_handle):
+# Main Loop
+print("Starting...")
+try:
     while True:
+
+        # main page
+        state['isMainPage'] = True
+        state['menu_selection'] = 0
+        state['button_last_tick'] = None
+        clear_callbacks(state)
+
         choice = pick_menu(
             "Mode Select",
             ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Potentiometer", "Back", "Main"],
         )
 
         if choice == "Function Generator":
-            result = run_function_generator_menu(state)
+            #result = run_function_generator_menu(state)
             if result == "MAIN":
                 continue
 
         elif choice == "Ohmmeter":
             # direct live reading matches your note that UI shows reading and threshold
-            run_ohmmeter_live(state, pi, adc_handle)
+            #run_ohmmeter_live(state, pi, adc_handle)
 
         elif choice == "Voltmeter":
             result = run_voltmeter_menu(state)
             if result == "MAIN":
                 continue
 
-        elif choice == "DC Reference":
-            result = run_dc_reference_menu(state)
-            if result == "MAIN":
-                continue
+        #elif choice == "DC Reference":
+        #    result = run_dc_reference_menu(state)
+        #    if result == "MAIN":
+        #        continue
 
         elif choice == "Potentiometer":
             result = run_potentiometer_menu(state)
             if result == "MAIN":
                 continue
+
+
+
+
+
+
+        """
+        # main page
+        state['isMainPage'] = True
+        state['menu_selection'] = 0
+        state['button_last_tick'] = None
+        clear_callbacks(state)
+
+        # Draw the initial menu screen
+        lcd.put_line(0, 'Select a Pot:')
+        lcd.put_line(1, '> Pot 1')
+        lcd.put_line(2, '  Pot 2')
+        lcd.put_line(3, '')
+
+        # Register encoder rotation + button press callbacks
+        decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, menu_direction_callback)
+        #print("decoder", decoder)
+        cb_btn = pi.callback(
+            rotaryEncoder_pin, pigpio.FALLING_EDGE, menu_button_callback)
+        #print("cb_btn", cb_btn)
+        state['active_callbacks'] = [decoder, cb_btn]
+
+        # Spin until the button callback clears isMainPage
+        while state['isMainPage']:
+            time.sleep(0.05)
+
+        # page 2
+        state['isVarConstPage'] = True
+        state['var_const_selection'] = 0
+        state['button_last_tick'] = None
+        clear_callbacks(state)
+
+        lcd.put_line(0, 'Resistance Type:')
+        lcd.put_line(1, '> Variable')
+        lcd.put_line(2, '  Constant')
+        lcd.put_line(3, '')
+
+        decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, varconst_direction_callback)
+        cb_btn = pi.callback(
+            rotaryEncoder_pin, pigpio.FALLING_EDGE, varconst_button_callback)
+        state['active_callbacks'] = [decoder, cb_btn]
+
+        while state['isVarConstPage']:
+            time.sleep(0.05)
+
+        if state['var_const_selection'] == 0:
             
-        elif choice == "Back":
-            fg_stop(state)
-            dc_stop(state)
+            #page 3a
+            state['isMainPage'] = False
+            state['last_time'] = None
+            state['button_last_tick'] = None
+            
+            clear_callbacks(state)
+            state['ohms'] = state['pot_values'][state['selected_pot']]
+                
+            step = ohms_to_step(state['ohms'])
+            lcd.put_line(0, f'Pot {state["selected_pot"] + 1}')
+            lcd.put_line(1, f'Ohms: {5000}')
+            lcd.put_line(2, '')
+            lcd.put_line(3, '')
 
-        elif choice == "Main":
-            fg_stop(state)
-            dc_stop(state)
+            # Encoder rotation adjusts ohms; button press writes to MCP4231.
+            # EITHER_EDGE on button so we can detect long holds on release.
+            decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, pot_direction_callback)
+            cb_btn = pi.callback(
+                rotaryEncoder_pin, pigpio.EITHER_EDGE, callback_set_digi)
+            state['active_callbacks'] = [decoder, cb_btn]
 
+            # Stay until a long hold sets isMainPage = True
+            while not state['isMainPage']:
+                time.sleep(0.05)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────────────────────────────────────
+        else:
+            # page 3b
+            state['isMainPage'] = False
+            state['constant_selection'] = 0
+            state['button_last_tick'] = None
+            clear_callbacks(state)
 
-def main():
-    pi = pigpio.pi()
-    if not pi.connected:
-        print("Cannot connect to pigpio daemon. Run: sudo pigpiod")
-        raise SystemExit(1)
+            lcd.put_line(0, f'Pot {state["selected_pot"] + 1} - Constant')
+            lcd.put_line(1, f'Value: {CONSTANT_LABELS[0]} Ohms')
+            lcd.put_line(2, '')
+            lcd.put_line(3, '')
 
-    lcd = None
-    adc_handle = None
-    dc_spi_handle = None
+            # Encoder cycles through presets; button writes chosen value.
+            decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, constant_direction_callback)
+            cb_btn = pi.callback(
+                rotaryEncoder_pin, pigpio.EITHER_EDGE, constant_button_callback)
+            state['active_callbacks'] = [decoder, cb_btn]
 
-    try:
-        lcd = i2c_lcd.lcd(pi, width=20)
-
-        adc_handle = open_adc(pi)
-        dc_spi_handle = pi.spi_open(DCREF_SPI_CHANNEL, DCREF_SPI_SPEED, DCREF_SPI_FLAGS)
-
-        # GPIO setup
-        for pin in (PIN_A, PIN_B):
-            pi.set_mode(pin, pigpio.INPUT)
-            pi.set_pull_up_down(pin, pigpio.PUD_UP)
-
-        pi.set_mode(ROTARY_BTN_PIN, pigpio.INPUT)
-        pi.set_pull_up_down(ROTARY_BTN_PIN, pigpio.PUD_UP)
-        pi.set_glitch_filter(ROTARY_BTN_PIN, 10_000)
-
-        pi.set_mode(VOLT_COMPARATOR_PIN, pigpio.INPUT)
-        pi.set_pull_up_down(VOLT_COMPARATOR_PIN, pigpio.PUD_OFF)
-
-        # Objects
-        sar_adc = SAR_ADC(
-            pi=pi,
-            spi_handle=adc_handle,
-            comparator_pin=VOLT_COMPARATOR_PIN,
-            selected_pot=0,
-            settle_time=0.002,
-            invert_comparator=False,
-        )
-
-        dc_ref = DCReferenceGenerator(
-            pi=pi,
-            spi_handle=dc_spi_handle,
-            settle_time=0.001,
-        )
-
-        fg_obj = None
-        if HAVE_SQUARE_WAVE and SquareWaveGenerator is not None:
-            try:
-                # If your constructor differs, adjust here.
-                fg_obj = SquareWaveGenerator(pi)
-            except Exception:
-                fg_obj = None
-
-        state = {
-            "active_callbacks": [],
-            "button_last_tick": None,
-            "button_press_tick": None,
-            "button_pressed": False,
-            "button_held": False,
-            "encoder_delta": 0,
-
-            "fg_type": "Square",
-            "fg_frequency": 1000,
-            "fg_amplitude": 0.0,
-            "fg_output_on": False,
-            "fg_obj": fg_obj,
-
-            "dc_voltage": 0.0,
-            "dc_output_on": False,
-            "dc_ref_obj": dc_ref,
-
-            "volt_source_label": "External",
-            "sar_adc": sar_adc,
-
-            #"pot_ohms": 5000,
-            #"pot_step": 0,
-        }
-
-        setup_callbacks(state, pi, lcd)
-
-        print("Starting integrated driver...")
-        run_main_menu(state, pi, adc_handle)
-
-    except KeyboardInterrupt:
-        print("\nStopping program...")
-
-    finally:
-        try:
-            fg_stop(state)  # safe if state exists
-        except Exception:
-            pass
-
-        try:
-            dc_stop(state)
-        except Exception:
-            pass
-
-        clear_callbacks()
-
-        if lcd is not None:
-            try:
-                lcd.close()
-            except Exception:
-                pass
-
-        if adc_handle is not None:
-            try:
-                close_adc(pi, adc_handle)
-            except Exception:
-                pass
-
-        if dc_spi_handle is not None:
-            try:
-                pi.spi_close(dc_spi_handle)
-            except Exception:
-                pass
-
-        pi.stop()
-
-
-if __name__ == "__main__":
-    main()
+            while not state['isMainPage']:
+                time.sleep(0.05)
+        """
+except KeyboardInterrupt:
+    print("\nStopping...")
+    clear_callbacks(state)
+    lcd.close()
+    pi.spi_close(spi_handle)
+    pi.stop()
