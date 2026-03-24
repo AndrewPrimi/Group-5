@@ -71,7 +71,7 @@ from callbacks import (
     
     pick_menu,
     #adjust_value,
-    wait_for_back_page,
+    #wait_for_back_page,
 
 )
 
