@@ -11,9 +11,9 @@ Mode Select
    d. Output      -> On / Off / Back / Main
 2. Ohmmeter       -> live reading + Back / Main
 3. Voltmeter
-   a. Source      -> External / Int. Reference / Back / Main
+   a. Source      -> External / Internal Reference / Back / Main
 4. DC Reference
-   a. Set Voltage -> Input
+   a. Voltage Value Input -> Input
    b. Output      -> On / Off / Back / Main
    c. Back
    d. Main
