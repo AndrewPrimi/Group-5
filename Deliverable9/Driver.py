@@ -70,7 +70,7 @@ from callbacks import (
     pot_direction_callback,
     
     pick_menu,
-    adjust_value,
+    #adjust_value,
     wait_for_back_page,
 
 )
