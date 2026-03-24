@@ -281,10 +281,17 @@ def run_ohmmeter():
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
     state['active_callbacks'] = [decoder, cb_btn]
 
+    def _draw_nav():
+        if nav_idx == 0:
+            lcd.put_line(2, ">Back")
+            lcd.put_line(3, " Main")
+        else:
+            lcd.put_line(2, " Back")
+            lcd.put_line(3, ">Main")
+
     lcd.put_line(0, "Ohmmeter")
     lcd.put_line(1, "Measuring...")
-    lcd.put_line(2, "")
-    lcd.put_line(3, "> Back   Main")
+    _draw_nav()
 
     last_update = 0.0
     try:
@@ -294,10 +301,7 @@ def run_ohmmeter():
             if delta != 0:
                 nav_idx = (nav_idx + delta) % len(nav_options)
                 state['encoder_delta'] = 0
-                if nav_idx == 0:
-                    lcd.put_line(3, "> Back   Main")
-                else:
-                    lcd.put_line(3, "  Back > Main")
+                _draw_nav()
 
             # Handle button press — select Back or Main
             if state.get('button_pressed'):
@@ -313,11 +317,9 @@ def run_ohmmeter():
                 tol = ohm_tolerance(step)
 
                 if resistance < 500 or resistance > 10000:
-                    lcd.put_line(1, "Reading is not")
-                    lcd.put_line(2, "in range")
+                    lcd.put_line(1, "Not in range")
                 else:
-                    lcd.put_line(1, f"R: {resistance:.0f} ohm")
-                    lcd.put_line(2, f"+/- {tol:.0f} ohm")
+                    lcd.put_line(1, f"{resistance:.0f}+/-{tol:.0f} ohm")
                 print(f"[Ohmmeter] step={step}  R={resistance:.0f}  tol={tol:.0f}")
 
             time.sleep(0.05)
@@ -337,7 +339,9 @@ def run_voltmeter_menu():
         )
 
         if choice == "External":
-            run_measurement(state, pi, lcd, spi_ce1, source_label="External")
+            result = run_measurement(state, pi, lcd, spi_ce1, source_label="External")
+            if result == "MAIN":
+                return "MAIN"
 
         elif choice == "Internal Reference":
             result = run_dc_reference_menu()

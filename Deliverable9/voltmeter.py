@@ -85,7 +85,7 @@ def _averaged_measure(pi, spi_handle, comp_pin, n=11):
 # We invert that mapping here:
 # old_displayed_value -> actual_value
 CAL_POINTS = [
-    (-5.00, -4.00),
+    (-5.00, -5.00),
     (-4.00, -3.50),
     (-3.33, -3.00),
     (-3.00, -2.50),
@@ -259,9 +259,17 @@ def run_source_menu(state, pi, lcd):
 
 def run_measurement(state, pi, lcd, adc_handle,
                     source_label="External", interval=0.5):
-    state['volt_meas_active'] = True
+    """Live voltage reading with Back/Main on the same screen."""
+    state['encoder_delta'] = 0
+    state['button_pressed'] = False
     state['button_last_tick'] = None
     clear_callbacks(state)
+
+    nav_options = ["Back", "Main"]
+    nav_idx = 0
+
+    def _on_rotate(direction):
+        state['encoder_delta'] = state.get('encoder_delta', 0) - direction
 
     def _on_button(_gpio, level, tick):
         if level != 0:
@@ -270,28 +278,55 @@ def run_measurement(state, pi, lcd, adc_handle,
         if last is not None and pigpio.tickDiff(last, tick) < _DEBOUNCE_US:
             return
         state['button_last_tick'] = tick
-        state['volt_meas_active'] = False
+        state['button_pressed'] = True
+
+    def _draw_nav():
+        if nav_idx == 0:
+            lcd.put_line(2, ">Back")
+            lcd.put_line(3, " Main")
+        else:
+            lcd.put_line(2, " Back")
+            lcd.put_line(3, ">Main")
 
     lcd.put_line(0, "Voltmeter")
-    lcd.put_line(1, f"Src: {source_label}")
-    lcd.put_line(2, "Measuring...")
-    lcd.put_line(3, "Btn: back")
+    lcd.put_line(1, "Measuring...")
+    _draw_nav()
 
+    decoder = rotary_encoder.decoder(pi, PIN_A, PIN_B, _on_rotate)
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
-    state['active_callbacks'] = [cb_btn]
+    state['active_callbacks'] = [decoder, cb_btn]
 
     last_update = 0.0
-    while state['volt_meas_active']:
-        now = time.time()
-        if now - last_update >= interval:
-            last_update = now
-            step = _averaged_measure(pi, adc_handle, COMPARATOR1_PIN, n=11)
-            l0, l1, l2, l3 = build_measurement_lines(step, source_label)
-            lcd.put_line(0, l0)
-            lcd.put_line(1, l1)
-            lcd.put_line(2, l2)
-            lcd.put_line(3, l3)
-            print(f"[Voltmeter] step={step}  voltage={step_to_voltage(step):+.2f} V")
-        time.sleep(0.05)
+    try:
+        while True:
+            # Handle encoder navigation between Back/Main
+            delta = state.get('encoder_delta', 0)
+            if delta != 0:
+                nav_idx = (nav_idx + delta) % len(nav_options)
+                state['encoder_delta'] = 0
+                _draw_nav()
 
-    clear_callbacks(state)
+            # Handle button press
+            if state.get('button_pressed'):
+                state['button_pressed'] = False
+                return "BACK" if nav_idx == 0 else "MAIN"
+
+            # Live measurement update
+            now = time.time()
+            if now - last_update >= interval:
+                last_update = now
+                step = _averaged_measure(pi, adc_handle, COMPARATOR1_PIN, n=11)
+                v = step_to_voltage(step)
+
+                if v <= V_MIN:
+                    lcd.put_line(1, f"{_fmt_v(V_MIN)} (at min)")
+                elif v >= V_MAX:
+                    lcd.put_line(1, f"{_fmt_v(V_MAX)} (at max)")
+                else:
+                    lcd.put_line(1, f"{_fmt_v(v)} +/-{VOLT_TOL_V:.2f}V")
+                print(f"[Voltmeter] step={step}  voltage={v:+.2f} V  comp_now={pi.read(COMPARATOR1_PIN)}")
+
+            time.sleep(0.05)
+    finally:
+        state['button_pressed'] = False
+        clear_callbacks(state)
