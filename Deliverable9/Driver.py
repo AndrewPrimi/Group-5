@@ -290,7 +290,7 @@ try:
             if result == "MAIN":
                 continue
 
-        elif choice == "Ohmmeter":
+        #elif choice == "Ohmmeter":
             # direct live reading matches your note that UI shows reading and threshold
             #run_ohmmeter_live(state, pi, adc_handle)
 
