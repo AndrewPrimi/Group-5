@@ -63,8 +63,6 @@ from ohmmeter import (
 )
 
 
-# ── Hardware setup ────────────────────────────────────────────────────────────
-
 pi = pigpio.pi()
 if not pi.connected:
     raise SystemExit("pigpiod not running – run 'sudo pigpiod' first.")
@@ -96,13 +94,9 @@ pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
 pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
 
 
-# ── Hardware objects ──────────────────────────────────────────────────────────
-
 sq_gen = SquareWaveGenerator(pi, spi_ce0, debug=True)
 dc_ref = DCReferenceGenerator(pi, spi_ce0, settle_time=0.001)
 
-
-# ── Shared state ──────────────────────────────────────────────────────────────
 
 state = {
     'active_callbacks': [],
@@ -125,8 +119,6 @@ state = {
 # Inject into callbacks module
 setup_callbacks(state, pi, lcd)
 
-
-# ── Function Generator ────────────────────────────────────────────────────────
 
 def run_function_generator_menu():
     while True:
@@ -165,7 +157,6 @@ def run_function_generator_menu():
 def run_fg_type():
     choice = pick_menu("Type", ["Square", "Back", "Main"])
     if choice == "Square":
-        # Only square is supported; just confirm
         wait_for_back(lambda: (
             "Type: Square",
             "Only square wave",
@@ -225,7 +216,6 @@ def run_fg_output():
             sq_gen.start()
             state['fg_output_on'] = True
 
-            # Show live output values, wait for button to go back
             wait_for_back(lambda: (
                 "Output: ON",
                 f"Freq: {state['fg_freq']} Hz",
@@ -249,8 +239,6 @@ def run_fg_output():
             state['fg_output_on'] = False
             return "MAIN"
 
-
-# ── Ohmmeter ──────────────────────────────────────────────────────────────────
 
 def run_ohmmeter():
     """Live resistance reading with Back/Main on the same screen."""
@@ -296,19 +284,16 @@ def run_ohmmeter():
     last_update = 0.0
     try:
         while True:
-            # Handle encoder navigation between Back/Main
             delta = state.get('encoder_delta', 0)
             if delta != 0:
                 nav_idx = (nav_idx + delta) % len(nav_options)
                 state['encoder_delta'] = 0
                 _draw_nav()
 
-            # Handle button press — select Back or Main
             if state.get('button_pressed'):
                 state['button_pressed'] = False
                 return "BACK" if nav_idx == 0 else "MAIN"
 
-            # Live measurement update
             now = time.time()
             if now - last_update >= 0.5:
                 last_update = now
@@ -327,8 +312,6 @@ def run_ohmmeter():
         state['button_pressed'] = False
         clear_callbacks(state)
 
-
-# ── Voltmeter ─────────────────────────────────────────────────────────────────
 
 def run_voltmeter_menu():
     """Voltmeter -> Source -> External / Internal Reference / Back / Main."""
@@ -354,8 +337,6 @@ def run_voltmeter_menu():
         elif choice == "Main":
             return "MAIN"
 
-
-# ── DC Reference ──────────────────────────────────────────────────────────────
 
 def run_dc_reference_menu():
     while True:
@@ -403,7 +384,6 @@ def run_dc_output():
             dc_ref.start()
             state['dc_output_on'] = True
 
-            # Live display: set voltage + measured voltage from voltmeter
             state['button_pressed'] = False
             state['button_last_tick'] = None
             clear_callbacks(state)
@@ -463,8 +443,6 @@ def run_dc_output():
             return "MAIN"
 
 
-# ── Main Loop ─────────────────────────────────────────────────────────────────
-
 print("Starting...")
 try:
     while True:
@@ -475,7 +453,6 @@ try:
 
         if choice == "Function Generator":
             result = run_function_generator_menu()
-            # MAIN or BACK both return to top
 
         elif choice == "Ohmmeter":
             result = run_ohmmeter()
@@ -487,7 +464,6 @@ try:
             result = run_dc_reference_menu()
 
         elif choice in ("Back", "Main"):
-            # At top level, both just redraw the main menu
             pass
 
 except KeyboardInterrupt:

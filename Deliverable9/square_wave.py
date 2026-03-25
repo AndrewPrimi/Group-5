@@ -32,12 +32,7 @@ def _clamp(value, low, high):
 
 
 def _amp_to_step(amplitude):
-    """
-    Convert peak amplitude (0–10 V) to MCP4131 wiper step (0–128).
-
-    Uses empirical calibration: Vpp = CAL_SLOPE * step + CAL_OFFSET
-    Desired Vpp = 2 * amplitude, so step = (2 * amplitude - CAL_OFFSET) / CAL_SLOPE
-    """
+    """Peak amplitude (0-10V) to MCP4131 wiper step using empirical calibration."""
     amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
     if amplitude <= 0.0:
         return 0

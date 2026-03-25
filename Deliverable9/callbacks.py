@@ -46,8 +46,6 @@ def clear_callbacks(state):
     state['active_callbacks'] = []
 
 
-# ── Internal helpers ─────────────────────────────────────────────────────────
-
 def _reset_input_flags():
     _s["encoder_delta"] = 0
     _s["button_pressed"] = False
@@ -76,14 +74,9 @@ def _attach_input_callbacks():
 
 
 def _draw_menu(title, options, idx):
-    """Render a scrollable menu on the 20×4 LCD.
-
-    Line 0: title
-    Lines 1-3: up to 3 visible options with '>' on the selected one.
-    """
+    """Render a scrollable 20x4 LCD menu. Line 0: title, lines 1-3: options."""
     _lcd.put_line(0, title)
 
-    # Compute a 3-item window around idx
     n = len(options)
     if n <= 3:
         window_start = 0
@@ -98,8 +91,6 @@ def _draw_menu(title, options, idx):
         else:
             _lcd.put_line(row + 1, "")
 
-
-# ── Public API ───────────────────────────────────────────────────────────────
 
 def pick_menu(title, options, start_idx=0):
     """Generic rotary menu.  Returns the selected option string."""
@@ -174,7 +165,6 @@ def adjust_value(title, value, min_val, max_val, step, fmt_fn):
             if delta != 0:
                 value += step * delta
                 value = max(min_val, min(max_val, value))
-                # Snap to step grid
                 value = round(round(value / step) * step, 10)
                 _s["encoder_delta"] = 0
                 _lcd.put_line(1, fmt_fn(value))

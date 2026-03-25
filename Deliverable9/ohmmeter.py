@@ -54,11 +54,7 @@ def _write_dac(pi, spi_handle, step):
 
 
 def sar_measure(pi, spi_handle, comp_pin):
-    """
-    Current working SAR logic:
-      comp == 0 -> KEEP bit
-      comp == 1 -> DISCARD bit
-    """
+    """5-bit SAR: comp == 0 keeps bit, comp == 1 discards."""
     step = 0
 
     for bit_pos in range(4, -1, -1):
@@ -82,17 +78,13 @@ def averaged_measure(pi, spi_handle, comp_pin, n=11):
 
 
 def _interp(x, x0, y0, x1, y1):
-    """Linear interpolation."""
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
 
 def calibrate_resistance(raw_ohms):
-    """
-    Convert raw computed resistance to calibrated resistance using
-    piecewise-linear interpolation through CAL_POINTS.
-    """
+    """Piecewise-linear correction through CAL_POINTS."""
     pts = CAL_POINTS
 
     if raw_ohms <= pts[0][0]:
@@ -133,9 +125,6 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    """
-    Practical display tolerance.
-    """
     if step <= 0 or step >= MCP4131_MAX_STEPS:
         return float('inf')
 

@@ -20,24 +20,14 @@ import rotary_encoder
 COMPARATOR1_PIN = 23
 
 
-# ── SAR measurement (voltmeter-specific) ─────────────────────────────────────
-
 def _write_dac(pi, spi_handle, step):
-    """
-    Write 5-bit SAR step (0..31) to MCP4131 7-bit register (0..127).
-    """
+    """Scale 5-bit step (0..31) to MCP4131 7-bit register (0..127)."""
     step = max(0, min(step, MCP4131_MAX_STEPS))
     pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
 
 
 def _sar_measure(pi, spi_handle, comp_pin):
-    """
-    5-bit SAR conversion for voltmeter.
-
-    Current working logic:
-      comp == 0 -> keep bit
-      comp == 1 -> discard bit
-    """
+    """5-bit SAR: comp == 0 keeps bit, comp == 1 discards."""
     step = 0
 
     for bit_pos in range(4, -1, -1):
@@ -58,59 +48,47 @@ def _averaged_measure(pi, spi_handle, comp_pin, n=11):
     return readings[n // 2]
 
 
-# ── Calibration data ──────────────────────────────────────────────────────────
-# Based on your measured behavior:
-#
-# actual input -> displayed by old code
-#  5.0 ->  5.00
-#  4.5 ->  4.33
-#  4.0 ->  3.67
-#  3.5 ->  3.33
-#  3.0 ->  2.75
-#  2.5 ->  2.25
-#  2.0 ->  2.00
-#  1.5 ->  1.33
-#  1.0 ->  0.67
-#  0.5 ->  0.33
-#  0.0 -> -0.33
-# -0.5 -> -1.00
-# -1.0 -> -1.33
-# -1.5 -> -2.00
-# -2.0 -> -2.50
-# -2.5 -> -3.00
-# -3.0 -> -3.33
-# -3.5 -> -4.00
-# -4.0 -> -5.00
-#
-# Direct step -> actual voltage calibration table.
-# Measured points marked with (M), rest interpolated from old calibration chain.
+# Complete step -> actual voltage calibration (all 32 steps measured)
+# Where multiple actual voltages map to the same step, midpoint is used.
 STEP_TO_VOLT = [
-    ( 0, -5.00),  # (M)
-    ( 1, -4.00),  # (M)
-    ( 4, -3.00),  # (M)
-    ( 7, -2.00),  # (M)
-    ( 9, -1.50),
-    (12, -1.00),
-    (13, -0.50),
-    (15,  0.00),
-    (16,  0.50),
-    (17,  1.00),
-    (18,  1.50),
-    (21,  2.00),
-    (22,  2.50),
-    (24,  3.00),
-    (26,  3.50),
-    (27,  4.00),
-    (29,  4.50),
-    (31,  5.00),
+    -4.88,  #  0: actual -5.00, -4.75
+    -4.50,  #  1: actual -4.50
+    -4.25,  #  2: actual -4.25
+    -4.00,  #  3: actual -4.00
+    -3.63,  #  4: actual -3.75, -3.50
+    -3.25,  #  5: actual -3.25
+    -2.88,  #  6: actual -3.00, -2.75
+    -2.50,  #  7: actual -2.50
+    -2.25,  #  8: actual -2.25
+    -2.00,  #  9: actual -2.00
+    -1.63,  # 10: actual -1.75, -1.50
+    -1.25,  # 11: actual -1.25
+    -1.00,  # 12: actual -1.00
+    -0.75,  # 13: actual -0.75
+    -0.50,  # 14: actual -0.50
+    -0.13,  # 15: actual -0.25, 0.00
+     0.19,  # 16: interpolated
+     0.50,  # 17: actual 0.25, 0.50, 0.75
+     1.00,  # 18: actual 1.00
+     1.25,  # 19: actual 1.25
+     1.50,  # 20: actual 1.50
+     1.88,  # 21: actual 1.75, 2.00
+     2.25,  # 22: actual 2.25
+     2.50,  # 23: actual 2.50
+     2.75,  # 24: actual 2.75
+     3.13,  # 25: actual 3.00, 3.25
+     3.50,  # 26: actual 3.50
+     3.75,  # 27: actual 3.75
+     4.13,  # 28: actual 4.00, 4.25
+     4.50,  # 29: actual 4.50
+     4.75,  # 30: actual 4.75
+     5.00,  # 31: actual 5.00
 ]
 
 V_MIN = -5.0
 V_MAX = 5.0
-VOLT_TOL_V = 0.15  # tighter displayed tolerance after calibration
 
 
-# ── Source menu ───────────────────────────────────────────────────────────────
 SRC_EXTERNAL  = 0
 SRC_INTERNAL  = 1
 SRC_BACK      = 2
@@ -121,33 +99,21 @@ NUM_SOURCES   = len(SOURCE_LABELS)
 _DEBOUNCE_US = 200_000
 
 
-# ── Conversion helpers ────────────────────────────────────────────────────────
-
-def _interp(x, x0, y0, x1, y1):
-    if x1 == x0:
-        return y0
-    return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
-
-
 def step_to_voltage(step):
-    """Convert SAR step directly to calibrated voltage using STEP_TO_VOLT table."""
+    """Convert SAR step to calibrated voltage via STEP_TO_VOLT lookup."""
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    pts = STEP_TO_VOLT
-
-    if step <= pts[0][0]:
-        return pts[0][1]
-
-    if step >= pts[-1][0]:
-        return pts[-1][1]
-
-    for (s0, v0), (s1, v1) in zip(pts, pts[1:]):
-        if s0 <= step <= s1:
-            return _interp(step, s0, v0, s1, v1)
-
-    return 0.0
+    return STEP_TO_VOLT[step]
 
 
-# ── Display helpers ───────────────────────────────────────────────────────────
+def step_to_tolerance(step):
+    """Tolerance based on voltage gap between neighboring steps."""
+    step = max(0, min(step, MCP4131_MAX_STEPS))
+    if step == 0:
+        return (STEP_TO_VOLT[1] - STEP_TO_VOLT[0]) / 2
+    if step == MCP4131_MAX_STEPS:
+        return (STEP_TO_VOLT[-1] - STEP_TO_VOLT[-2]) / 2
+    return (STEP_TO_VOLT[step + 1] - STEP_TO_VOLT[step - 1]) / 4
+
 
 def _fmt_v(v):
     return f"{v:+.2f}V"
@@ -168,18 +134,17 @@ def build_source_menu_lines(selection):
 
 def build_measurement_lines(step, source_label="External"):
     v = step_to_voltage(step)
+    tol = step_to_tolerance(step)
 
     if v <= V_MIN:
         line2 = f"{_fmt_v(V_MIN)} (at min)"
     elif v >= V_MAX:
         line2 = f"{_fmt_v(V_MAX)} (at max)"
     else:
-        line2 = f"{_fmt_v(v)} +/-{VOLT_TOL_V:.2f}V"
+        line2 = f"{_fmt_v(v)} +/-{tol:.2f}V"
 
     return "Voltmeter", f"Src: {source_label}", line2, "Btn: back"
 
-
-# ── Page runners ──────────────────────────────────────────────────────────────
 
 def run_source_menu(state, pi, lcd):
     state['volt_source_sel']  = SRC_EXTERNAL
@@ -259,31 +224,29 @@ def run_measurement(state, pi, lcd, adc_handle,
     last_update = 0.0
     try:
         while True:
-            # Handle encoder navigation between Back/Main
             delta = state.get('encoder_delta', 0)
             if delta != 0:
                 nav_idx = (nav_idx + delta) % len(nav_options)
                 state['encoder_delta'] = 0
                 _draw_nav()
 
-            # Handle button press
             if state.get('button_pressed'):
                 state['button_pressed'] = False
                 return "BACK" if nav_idx == 0 else "MAIN"
 
-            # Live measurement update
             now = time.time()
             if now - last_update >= interval:
                 last_update = now
                 step = _averaged_measure(pi, adc_handle, COMPARATOR1_PIN, n=11)
                 v = step_to_voltage(step)
+                tol = step_to_tolerance(step)
 
                 if v <= V_MIN:
                     lcd.put_line(1, f"{_fmt_v(V_MIN)} (at min)")
                 elif v >= V_MAX:
                     lcd.put_line(1, f"{_fmt_v(V_MAX)} (at max)")
                 else:
-                    lcd.put_line(1, f"{_fmt_v(v)} +/-{VOLT_TOL_V:.2f}V")
+                    lcd.put_line(1, f"{_fmt_v(v)} +/-{tol:.2f}V")
                 print(f"[Voltmeter] step={step}  voltage={v:+.2f} V  comp_now={pi.read(COMPARATOR1_PIN)}")
 
             time.sleep(0.05)

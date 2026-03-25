@@ -36,25 +36,17 @@ class SAR_ADC:
 
         self.pi.set_mode(self.compare_pin, 0)  # input
 
-    # ── Write step value ─────────────────────────────────────────────
-
     def _write_step(self, step):
         step = max(0, min(MAX_STEPS - 1, step))
         cmd = 0x00 if self.selected_pot == 0 else 0x10
         self.pi.spi_write(self.spi_handle, [cmd, step])
         time.sleep(self.settle_time)
 
-    # ── Read step value in binary search ─────────────────────────────
-
     def read_step(self):
-        """
-        Perform SAR search in step space.
-        Returns the best step value.
-        """
+        """Perform SAR binary search, return best step value."""
         low = 0
         high = MAX_STEPS - 1
         
-        # Binary search algorithm
         while low <= high:
             mid = (low + high) // 2
 
@@ -74,8 +66,6 @@ class SAR_ADC:
 
         return high        
         
-    # ── Read comparator ──────────────────── 
-    
     def _read_comparator(self):
         val = self.pi.read(self.compare_pin)
         
@@ -85,17 +75,13 @@ class SAR_ADC:
         return val
 
     
-    # ── Voltmeter: Return Vin approximation or MAX_VOLTAGE  ────────────────────
-
     def read_voltage(self, Vref):
         """
         Perform SAR and return estimated Vin voltage.
         """
         step = self.read_step()
-        # voltage is a fraction of Vref
         voltage = -Vref + (2 * Vref) * (step / MAX_STEPS)
 
-        # voltage must be within the range [-6, 6] 
         if voltage > MAX_VOLTAGE:
             return MAX_VOLTAGE, step
         elif voltage < MIN_VOLTAGE:
@@ -103,8 +89,6 @@ class SAR_ADC:
         
         return voltage, step
     
-    # ── Ohmmeter: Return resistance approximation ──────────────────────────────
-
     def read_ohms(self, Vref, R_known):
         """
         Perform SAR and return estimated R_unknown resistance.
@@ -113,7 +97,5 @@ class SAR_ADC:
 
         if Vin <= 0 or Vin >= Vref:
             return None, step
-        # The R_unknown R_known voltage divider formula
         R_unknown = R_known * Vin / (Vref - Vin)
-        #R_unknown = 10000 - R_unknown
         return R_unknown, step

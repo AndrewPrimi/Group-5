@@ -47,31 +47,23 @@ class DCReferenceGenerator:
         self._voltage = 0.0
         self._running = False
 
-    # ── Internal ──────────────────────────────────────────────────────────────
-
     def _write_wipers(self, voltage):
-        """Write both W0 and W1 for the given voltage."""
         w0, w1 = _volt_to_steps(voltage)
         self._pi.spi_write(self._spi, [0x00, w0])
         time.sleep(self._settle)
         self._pi.spi_write(self._spi, [0x10, w1])
         time.sleep(self._settle)
 
-    # ── Public API ────────────────────────────────────────────────────────────
-
     def set_voltage(self, voltage):
-        """Set target voltage (-5.0 to +5.0 V) and apply immediately if running."""
         self._voltage = max(MIN_VOLT, min(MAX_VOLT, voltage))
         if self._running:
             self._write_wipers(self._voltage)
 
     def start(self):
-        """Enable output at the stored voltage."""
         self._running = True
         self._write_wipers(self._voltage)
 
     def stop(self):
-        """Move both wipers to the 0 V position and disable output."""
         self._running = False
         self._write_wipers(0.0)
 

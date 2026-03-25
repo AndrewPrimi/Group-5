@@ -1,14 +1,9 @@
 """
 ohms_steps.py – Constants and conversion helpers for the MCP4231 digital pot.
-
-This version uses interpolation between your calibration points so you can ask
-for values like 5010, 5020, 5030 ohms even if they are not explicitly listed
-in the table.
 """
 
 from bisect import bisect_left
 
-# ── Potentiometer range ──────────────────────────────────
 MINIMUM_OHMS = 100
 MAXIMUM_OHMS = 10000
 
@@ -18,14 +13,11 @@ MAX_CODE = 127
 
 DEFAULT_OHMS = 5000
 
-# ── Debounce ─────────────────────────────────────────────
 BUTTON_DEBOUNCE_US = 200000
 
-# ── Constant-resistance presets ──────────────────────────
 CONSTANT_OHMS = [100, 1000, 5000, 10000]
 CONSTANT_LABELS = ['100', '1k', '5k', '10k']
 
-# ── SPI bus configuration for the MCP4231 ────────────────
 SPI_CHANNEL = 0
 SPI_SPEED = 50000
 SPI_FLAGS = 0
@@ -147,193 +139,9 @@ CAL_TABLE = {
 
 
 def ohms_to_step(ohms):
-    """Convert a desired resistance (ohms) to a wiper step (0-128).
-
-    Clamps the input to [0, MAXIMUM_OHMS] before converting so out-of-range
-    values don't produce invalid steps.
-    """
-    
     step = int((ohms / MAXIMUM_OHMS) * MAX_STEPS)
     return step
 
 
-"""def ohms_to_step(ohms):
-    '''Convert desired resistance to best step using calibration.'''
-
-    # Clamp input
-    ohms = max(MINIMUM_OHMS, min(MAXIMUM_OHMS, ohms))
-
-    # Find closest available calibrated point
-    closest = min(listOfOhms.keys(), key=lambda k: abs(k - ohms))
-
-    # Convert that to step
-    step = int((closest / MAXIMUM_OHMS) * MAX_STEPS)
-
-    return step
-
-"""
 def step_to_ohms(step):
-    '''Convert a wiper step (0-128) back to an approximate resistance (ohms).
-
-    This is the inverse of ohms_to_step (with minor rounding differences).
-    '''
-    #raw_ohms = int((step / MAX_STEPS) * MAXIMUM_OHMS)
-    #closest_key = min(listOfOhms.keys(), key=lambda k: abs(k - raw_ohms))
-    #return listOfOhms[closest_key]
     return 0
-
-
-'''
-def step_to_ohms(step):
-    """Convert step to approximate ohms using calibration."""
-
-    # Convert step → ideal ohms
-    ideal = (step / MAX_STEPS) * MAXIMUM_OHMS
-
-    # Snap to nearest calibrated value
-    closest = min(listOfOhms.keys(), key=lambda k: abs(k - ideal))
-
-    return closest
-
-if __name__ == "__main__":
-    ohms = 9100
-    x = ohms_to_step(ohms)
-    print("Step: ", x)
-    y = step_to_ohms(x)
-    print("Back to Ohms: ", y)
-
-
-# ------------------------------------------------------------------
-# Precompute sorted lists for interpolation
-# ------------------------------------------------------------------
-
-# Sorted by ACTUAL desired ohms
-"""_DESIRED_TO_CORRECTED = sorted((actual, corrected) for corrected, actual in CAL_TABLE.items())
-DESIRED_VALUES = [pair[0] for pair in _DESIRED_TO_CORRECTED]
-CORRECTED_FOR_DESIRED = [pair[1] for pair in _DESIRED_TO_CORRECTED]
-
-# Sorted by CORRECTED/internal ohms
-_CORRECTED_TO_DESIRED = sorted((corrected, actual) for corrected, actual in CAL_TABLE.items())
-CORRECTED_VALUES = [pair[0] for pair in _CORRECTED_TO_DESIRED]
-DESIRED_FOR_CORRECTED = [pair[1] for pair in _CORRECTED_TO_DESIRED]
-
-
-def _clamp(value, low, high):
-    return max(low, min(high, value))
-
-
-def _interp(x, x0, y0, x1, y1):
-    Simple linear interpolation.
-    if x1 == x0:
-        return y0
-    return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
-
-
-def _interp_from_sorted_lists(x, xs, ys):
-
-    Interpolate y from monotonic sorted xs and matching ys.
-    Clamps outside the range.
-
-    if x <= xs[0]:
-        return ys[0]
-    if x >= xs[-1]:
-        return ys[-1]
-
-    i = bisect_left(xs, x)
-
-    x0, x1 = xs[i - 1], xs[i]
-    y0, y1 = ys[i - 1], ys[i]
-
-    return _interp(x, x0, y0, x1, y1)
-
-
-# ------------------------------------------------------------------
-# Main conversion helpers
-# ------------------------------------------------------------------
-
-def desired_ohms_to_corrected_ohms(desired_ohms):
-
-    Convert desired actual ohms -> corrected/internal ohms using interpolation.
-
-    Example:
-        desired 5000 -> about 4679
-        desired 5010 -> interpolated between 5000 and 5100 points
-
-    desired_ohms = _clamp(float(desired_ohms), MINIMUM_OHMS, MAXIMUM_OHMS)
-    return _interp_from_sorted_lists(desired_ohms, DESIRED_VALUES, CORRECTED_FOR_DESIRED)
-
-
-def corrected_ohms_to_desired_ohms(corrected_ohms):
-
-    Convert corrected/internal ohms -> estimated actual ohms using interpolation.
-    Useful for converting a step back to displayed ohms.
-
-    corrected_ohms = _clamp(float(corrected_ohms), CORRECTED_VALUES[0], CORRECTED_VALUES[-1])
-    return _interp_from_sorted_lists(corrected_ohms, CORRECTED_VALUES, DESIRED_FOR_CORRECTED)
-
-
-def ohms_to_step(desired_ohms):
-
-    Convert desired actual ohms to digipot step/code.
-
-    Flow:
-        desired actual ohms
-          -> corrected/internal ohms via interpolation
-          -> digipot code 0..127
-
-    corrected_ohms = desired_ohms_to_corrected_ohms(desired_ohms)
-    code = round((corrected_ohms / MAXIMUM_OHMS) * MAX_CODE)
-    return int(_clamp(code, 0, MAX_CODE))
-
-
-def step_to_corrected_ohms(step):
-
-    Convert digipot step/code -> corrected/internal ohms.
-
-    step = int(_clamp(step, 0, MAX_CODE))
-    return (step / MAX_CODE) * MAXIMUM_OHMS
-
-
-def step_to_ohms(step):
-
-    Convert digipot step/code -> estimated actual ohms using interpolation.
-
-    corrected_ohms = step_to_corrected_ohms(step)
-    return corrected_ohms_to_desired_ohms(corrected_ohms)
-
-
-def generate_dense_lookup(start=100, stop=10000, increment=10):
-
-    Generate a dense lookup table:
-        desired ohms -> corrected/internal ohms
-
-    Example output entry:
-        5010 : 4686.05
-
-    table = {}
-    for desired in range(start, stop + 1, increment):
-        table[desired] = desired_ohms_to_corrected_ohms(desired)
-    return table
-
-
-if __name__ == "__main__":
-    # Example tests
-    tests = [500, 1000, 2500, 5000, 5010, 5020, 7500, 9990]
-
-    print("Desired -> Corrected -> Step -> Back to estimated actual\n")
-    for ohms in tests:
-        corrected = desired_ohms_to_corrected_ohms(ohms)
-        step = ohms_to_step(ohms)
-        back = step_to_ohms(step)
-
-        print(
-            f"desired={ohms:5.0f}  "
-            f"corrected={corrected:8.2f}  "
-            f"step={step:3d}  "
-            f"estimated_actual={back:8.2f}"
-        )"""
-
-    # If you want a dense 10-ohm table:
-    # dense = generate_dense_lookup()
-    # print(dense[5000], dense[5010], dense[5020])
-    '''
