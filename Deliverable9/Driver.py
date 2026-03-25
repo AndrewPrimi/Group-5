@@ -32,7 +32,6 @@ import time
 import pigpio
 
 import i2c_lcd
-import rotary_encoder
 
 from callbacks import (
     PIN_A,
@@ -51,8 +50,6 @@ from dc_reference import DCReferenceGenerator, MIN_VOLT, MAX_VOLT
 from voltmeter import (
     COMPARATOR1_PIN,
     run_measurement,
-    step_to_voltage,
-    _averaged_measure as volt_averaged_measure,
 )
 
 from ohmmeter import (
@@ -409,47 +406,12 @@ def run_dc_output():
             dc_ref.start()
             state['dc_output_on'] = True
 
-            state['button_pressed'] = False
-            state['button_last_tick'] = None
-            clear_callbacks(state)
-
-            DEBOUNCE_US = 200_000
-
-            def _on_button(_gpio, level, tick):
-                if level != 0:
-                    return
-                last = state.get('button_last_tick')
-                if last is not None and pigpio.tickDiff(last, tick) < DEBOUNCE_US:
-                    return
-                state['button_last_tick'] = tick
-                state['button_pressed'] = True
-
-            lcd.put_line(0, "DC Ref: ON")
-            lcd.put_line(1, f"Set: {state['dc_voltage']:+.3f} V")
-            lcd.put_line(2, "Measuring...")
-            lcd.put_line(3, "Btn: back")
-
-            cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
-            state['active_callbacks'] = [cb_btn]
-
-            last_update = 0.0
-            try:
-                while not state['button_pressed']:
-                    now = time.time()
-                    if now - last_update >= 0.5:
-                        last_update = now
-                        step = volt_averaged_measure(pi, spi_ce1, COMPARATOR1_PIN, n=11)
-                        measured = step_to_voltage(step)
-                        lcd.put_line(0, "DC Ref: ON")
-                        lcd.put_line(1, f"Set: {state['dc_voltage']:+.3f} V")
-                        lcd.put_line(2, f"Meas: {measured:+.2f} V")
-                        lcd.put_line(3, "Btn: back")
-                        print(f"[DC Ref] set={state['dc_voltage']:+.3f}  meas={measured:+.2f}")
-                    time.sleep(0.05)
-            finally:
-                state['button_pressed'] = False
-                clear_callbacks(state)
-
+            wait_for_back(lambda: (
+                "DC Ref: ON",
+                f"Set: {state['dc_voltage']:+.3f} V",
+                "",
+                "Back",
+            ))
             dc_ref.stop()
             state['dc_output_on'] = False
 
