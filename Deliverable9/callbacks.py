@@ -75,21 +75,25 @@ def _attach_input_callbacks():
 
 def _draw_menu(title, options, idx):
     """Render a scrollable 20x4 LCD menu. Line 0: title, lines 1-3: options."""
-    _lcd.put_line(0, title)
+    start_row = 0
+    if title:
+        _lcd.put_line(0, title)
+        start_row = 1
 
+    max_rows = 4 - start_row
     n = len(options)
-    if n <= 3:
+    if n <= max_rows:
         window_start = 0
     else:
-        window_start = max(0, min(idx - 1, n - 3))
+        window_start = max(0, min(idx - 1, n - max_rows))
 
-    for row in range(3):
+    for row in range(max_rows):
         i = window_start + row
         if i < n:
             prefix = ">" if i == idx else " "
-            _lcd.put_line(row + 1, prefix + options[i])
+            _lcd.put_line(start_row + row, prefix + options[i])
         else:
-            _lcd.put_line(row + 1, "")
+            _lcd.put_line(start_row + row, "")
 
 
 def pick_menu(title, options, start_idx=0):
