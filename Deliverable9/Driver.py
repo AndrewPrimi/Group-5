@@ -135,10 +135,11 @@ def run_top_screen():
         lcd.backlight(True)
         lcd._inst(0x0C)  # display on, cursor off, blink off
 
-        choice = pick_menu("System", ["OFF", "Mode Select"])
+        choice = pick_menu("", ["OFF", "Mode Select"])
 
         if choice == "OFF":
             ensure_all_off()
+            time.sleep(60)
 
         elif choice == "Mode Select":
             return
