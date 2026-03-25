@@ -28,14 +28,12 @@ _SETTLE_S = 0.02
 # -------------------------------------------------------------------
 # Calibration points
 # Format: (raw_measured_ohms, actual_ohms)
+# Add more points later if needed.
 # -------------------------------------------------------------------
 CAL_POINTS = [
-    (636.0,   613.0),
-    (985.0,   1000.0),
-    (2132.0,  2360.0),
-    (2796.0,  2960.0),
-    (4256.0,  4280.0),
-    (7778.0,  6700.0),
+    (214.0,   220.0),
+    (5750.0,  5000.0),
+    (10400.0, 10000.0),
 ]
 
 
@@ -87,15 +85,17 @@ def _interp(x, x0, y0, x1, y1):
 
 def calibrate_resistance(raw_ohms):
     """Piecewise-linear correction through CAL_POINTS."""
-    pts = sorted(CAL_POINTS)
+    pts = CAL_POINTS
 
     if raw_ohms <= pts[0][0]:
+        # Scale below first point from 0 -> first point
         return _interp(raw_ohms, 0.0, 0.0, pts[0][0], pts[0][1])
 
     for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
         if x0 <= raw_ohms <= x1:
             return _interp(raw_ohms, x0, y0, x1, y1)
 
+    # Above last point: extend using last segment slope
     x0, y0 = pts[-2]
     x1, y1 = pts[-1]
     return _interp(raw_ohms, x0, y0, x1, y1)
@@ -107,7 +107,7 @@ def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
         R_unknown = R_ref * (MAX - step) / step
     """
     if step <= 0:
-        return float("inf")
+        return float('inf')
 
     if step >= MCP4131_MAX_STEPS:
         return 0.0
@@ -118,23 +118,17 @@ def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     raw_r = step_to_raw_resistance(step, r_ref)
 
-    if raw_r == float("inf"):
-        return float("inf")
+    if raw_r == float('inf'):
+        return float('inf')
 
-    corrected_r = calibrate_resistance(raw_r)
-
-    if corrected_r < R_MIN_OHMS:
-        corrected_r = R_MIN_OHMS
-    elif corrected_r > R_MAX_OHMS:
-        corrected_r = R_MAX_OHMS
-
-    return corrected_r
+    return calibrate_resistance(raw_r)
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
     if step <= 0 or step >= MCP4131_MAX_STEPS:
-        return float("inf")
+        return float('inf')
 
     r_ext = step_to_resistance(step, r_ref)
 
+    # Aim for a practical visible tolerance estimate
     return max(50.0, 0.02 * r_ext)
