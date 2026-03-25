@@ -120,6 +120,30 @@ state = {
 setup_callbacks(state, pi, lcd)
 
 
+def ensure_all_off():
+    sq_gen.stop()
+    dc_ref.stop()
+    state['fg_output_on'] = False
+    state['dc_output_on'] = False
+    lcd.clear()
+    lcd.backlight(False)
+    lcd._inst(0x08)  # display off
+
+
+def run_top_screen():
+    while True:
+        lcd.backlight(True)
+        lcd._inst(0x0C)  # display on, cursor off, blink off
+
+        choice = pick_menu("System", ["OFF", "Mode Select"])
+
+        if choice == "OFF":
+            ensure_all_off()
+
+        elif choice == "Mode Select":
+            return
+
+
 def run_function_generator_menu():
     while True:
         choice = pick_menu(
@@ -444,27 +468,31 @@ def run_dc_output():
 
 
 print("Starting...")
+ensure_all_off()
 try:
     while True:
-        choice = pick_menu(
-            "Mode Select",
-            ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
-        )
+        run_top_screen()
 
-        if choice == "Function Generator":
-            result = run_function_generator_menu()
+        while True:
+            choice = pick_menu(
+                "Mode Select",
+                ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
+            )
 
-        elif choice == "Ohmmeter":
-            result = run_ohmmeter()
+            if choice == "Function Generator":
+                result = run_function_generator_menu()
 
-        elif choice == "Voltmeter":
-            result = run_voltmeter_menu()
+            elif choice == "Ohmmeter":
+                result = run_ohmmeter()
 
-        elif choice == "DC Reference":
-            result = run_dc_reference_menu()
+            elif choice == "Voltmeter":
+                result = run_voltmeter_menu()
 
-        elif choice in ("Back", "Main"):
-            pass
+            elif choice == "DC Reference":
+                result = run_dc_reference_menu()
+
+            elif choice in ("Back", "Main"):
+                break
 
 except KeyboardInterrupt:
     print("\nStopping...")

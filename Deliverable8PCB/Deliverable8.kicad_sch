@@ -3686,6 +3686,16 @@
 		)
 		(uuid "ca0b48b7-1720-4caf-8c8e-ccb3e10f8b84")
 	)
+	(text "Ohmmeter"
+		(exclude_from_sim no)
+		(at 119.38 368.3 0)
+		(effects
+			(font
+				(size 3.81 3.81)
+			)
+		)
+		(uuid "cae6f5ec-a5d2-49f2-be8a-a72e27a6805a")
+	)
 	(text "Square Wave Generator"
 		(exclude_from_sim no)
 		(at 321.31 394.97 0)
@@ -5378,6 +5388,16 @@
 		)
 		(uuid "6ba23ef1-ca1b-48c3-976c-a3790954cfc6")
 	)
+	(polyline
+		(pts
+			(xy 189.23 359.41) (xy 57.15 359.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6bc746c7-f7a5-4391-9617-afd96915cc61")
+	)
 	(wire
 		(pts
 			(xy 364.49 280.67) (xy 354.33 280.67)
@@ -5887,6 +5907,16 @@
 			(type default)
 		)
 		(uuid "94db1f5c-1162-48fb-9795-86ead69a0e0b")
+	)
+	(polyline
+		(pts
+			(xy 57.15 300.99) (xy 189.23 300.99)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "95ccd58c-1e20-40ea-a74e-4c10e4f99095")
 	)
 	(wire
 		(pts
@@ -6938,6 +6968,16 @@
 		)
 		(uuid "ee3811d1-154d-45e8-80b4-c373e73dcd2c")
 	)
+	(polyline
+		(pts
+			(xy 57.15 300.99) (xy 57.15 359.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ee4f5849-6769-4d99-bb82-52e4ce68c9ca")
+	)
 	(wire
 		(pts
 			(xy 110.49 208.28) (xy 110.49 198.12)
@@ -7197,6 +7237,16 @@
 			(type solid)
 		)
 		(uuid "fde0e62e-8806-4457-8cae-818ac54a6d8f")
+	)
+	(polyline
+		(pts
+			(xy 189.23 300.99) (xy 189.23 359.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ff442d60-e760-42fa-aab2-e3e22f6af214")
 	)
 	(wire
 		(pts
@@ -10056,7 +10106,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_DIP:DIP-8_W7.62mm"
+		(property "Footprint" ""
 			(at 374.65 358.14 0)
 			(effects
 				(font

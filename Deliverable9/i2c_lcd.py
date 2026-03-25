@@ -147,11 +147,10 @@ class lcd:
         Switch backlight on (True) or off (False).
         """
         self.backlight_on = on
-        # Push a harmless write so the state changes on the backpack
-        '''try:
+        try:
             self._byte(0x00, 0x00)
         except Exception:
-            pass'''
+            pass
 
     """
     def _init(self):
