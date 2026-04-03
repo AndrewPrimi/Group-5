@@ -1,29 +1,14 @@
 """
 Driver.py
 
-Integrated LCD UI driver matching the UI tree from UI.md:
-
-Mode Select
-1. Function Generator
-   a. Type        -> Square / Back / Main
-   b. Frequency   -> Input / Back / Main
-   c. Amplitude   -> Input / Back / Main
-   d. Output      -> On / Off / Back / Main
-2. Ohmmeter       -> live reading + Back / Main
-3. Voltmeter
-   a. Source      -> External / Internal Reference / Back / Main
-4. DC Reference
-   a. Voltage Value Input -> Input
-   b. Output      -> On / Off / Back / Main
-   c. Back
-   d. Main
+Integrated LCD UI driver matching the UI tree from UI.md.
 
 Integrates:
-- square_wave.py   (SquareWaveGenerator on CE0)
-- dc_reference.py  (DCReferenceGenerator on CE0)
-- voltmeter.py     (SAR voltmeter on CE1)
-- ohmmeter.py      (SAR ohmmeter on CE1)
-- callbacks.py     (pick_menu, adjust_value, wait_for_back)
+- square_wave.py          (SquareWaveGenerator on CE0)
+- dc_reference_single.py  (DCReferenceSingleGenerator on CE0)
+- voltmeter.py            (SAR voltmeter on CE1)
+- ohmmeter.py             (SAR ohmmeter on CE1)
+- callbacks.py            (pick_menu, adjust_value, wait_for_back)
 - i2c_lcd.py
 - rotary_encoder.py
 """
@@ -32,6 +17,7 @@ import time
 import pigpio
 
 import i2c_lcd
+import rotary_encoder
 
 from callbacks import (
     PIN_A,
@@ -45,7 +31,7 @@ from callbacks import (
 )
 
 from square_wave import SquareWaveGenerator, MIN_FREQ, MAX_FREQ, MAX_AMP, AMP_STEP, FREQ_STEP
-from dc_reference import DCReferenceGenerator, MIN_VOLT, MAX_VOLT
+from dc_reference_single import DCReferenceSingleGenerator, MIN_VOLT, MAX_VOLT
 
 from voltmeter import (
     COMPARATOR1_PIN,
@@ -68,13 +54,12 @@ if not pi.connected:
 
 lcd = i2c_lcd.lcd(pi, width=20)
 
-# CE0: square wave MCP4131 + DC reference MCP4231 (never used simultaneously)
+# CE0: square wave MCP4131 + DC reference MCP4231 (never used at the same time)
 spi_ce0 = pi.spi_open(0, 50_000, 0)
 
-# CE1: voltmeter + ohmmeter MCP4131 (never used simultaneously)
+# CE1: voltmeter + ohmmeter MCP4131 (never used at the same time)
 spi_ce1 = pi.spi_open(1, 50_000, 0)
 
-print(f"SPI handles: CE0={spi_ce0}  CE1={spi_ce1}")
 
 # GPIO setup for rotary encoder
 pi.set_mode(PIN_A, pigpio.INPUT)
@@ -94,7 +79,7 @@ pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
 
 
 sq_gen = SquareWaveGenerator(pi, spi_ce0, debug=True)
-dc_ref = DCReferenceGenerator(pi, spi_ce0, settle_time=0.001)
+dc_ref = DCReferenceSingleGenerator(pi, spi_ce0, settle_time=0.001)
 
 
 state = {
@@ -120,6 +105,7 @@ setup_callbacks(state, pi, lcd)
 
 
 def ensure_all_off():
+    """Safely shut down all outputs and turn off the LCD."""
     sq_gen.stop()
     dc_ref.stop()
     state['fg_output_on'] = False
@@ -130,15 +116,16 @@ def ensure_all_off():
 
 
 def run_top_screen():
+    """Top-level screen: OFF / Mode Select. Returns when Mode Select is chosen."""
     while True:
+        # Turn LCD back on for the menu
         lcd.backlight(True)
-        lcd._inst(0x0C)  # display on, cursor off, blink off
+        lcd._inst(0x0C)  # display on
 
-        choice = pick_menu("", ["OFF", "Mode Select"])
+        choice = pick_menu("System", ["OFF", "Mode Select"])
 
         if choice == "OFF":
             ensure_all_off()
-            time.sleep(60)
 
         elif choice == "Mode Select":
             return
@@ -426,7 +413,7 @@ def run_dc_output():
             lcd.put_line(0, "DC Ref: ON")
             lcd.put_line(1, f"Set: {state['dc_voltage']:+.3f} V")
             lcd.put_line(2, "Measuring...")
-            lcd.put_line(3, "Back")
+            lcd.put_line(3, "Btn: back")
 
             cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
             state['active_callbacks'] = [cb_btn]
@@ -439,7 +426,10 @@ def run_dc_output():
                         last_update = now
                         step = volt_averaged_measure(pi, spi_ce1, COMPARATOR1_PIN, n=11)
                         measured = step_to_voltage(step)
+                        lcd.put_line(0, "DC Ref: ON")
+                        lcd.put_line(1, f"Set: {state['dc_voltage']:+.3f} V")
                         lcd.put_line(2, f"Meas: {measured:+.2f} V")
+                        lcd.put_line(3, "Btn: back")
                         print(f"[DC Ref] set={state['dc_voltage']:+.3f}  meas={measured:+.2f}")
                     time.sleep(0.05)
             finally:
@@ -489,7 +479,7 @@ try:
                 result = run_dc_reference_menu()
 
             elif choice in ("Back", "Main"):
-                break
+                break  # go back to top screen
 
 except KeyboardInterrupt:
     print("\nStopping...")
