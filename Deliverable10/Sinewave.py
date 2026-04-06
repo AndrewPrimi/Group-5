@@ -22,11 +22,10 @@ Hardware:
   attenuates the ~10kHz–500kHz carrier content).
 
 Amplitude:
-  Expressed as a fraction 0.0–1.0.
-  1.0 = duty cycle swings from 0% to 100% (maximum AC content).
-  0.0 = 50% constant duty cycle (no AC output).
-  Actual output voltage depends on the analog gain stage and must be
-  calibrated on the hardware if a specific Vpp is required.
+  User-facing unit is peak-to-peak output voltage (Vpp), accounting for
+  the analog gain stage (GAIN = 3) and 3.3V GPIO rail.
+  MAX_AMP = 3.3 * 3 ≈ 9.9 Vpp.
+  Internally the duty cycle fraction = amplitude_Vpp / MAX_AMP.
 """
 
 import math
@@ -38,8 +37,11 @@ N_SAMPLES = 32        # LUT points per sine cycle
 MIN_FREQ  = 100       # Hz
 MAX_FREQ  = 10_000    # Hz
 FREQ_STEP = 10        # Hz per encoder click
-MAX_AMP   = 1.0       # amplitude fraction 0.0–1.0
-AMP_STEP  = 0.05
+
+GAIN      = 3         # analog gain stage multiplier
+VREF      = 3.3       # GPIO high voltage (V)
+MAX_AMP   = VREF * GAIN          # max Vpp output ≈ 9.9 V
+AMP_STEP  = 0.5       # V per encoder click
 
 # Pre-computed sine LUT: N_SAMPLES values in [-1.0, +1.0]
 _LUT = [math.sin(2 * math.pi * i / N_SAMPLES) for i in range(N_SAMPLES)]
@@ -51,7 +53,7 @@ def _clamp(value, lo, hi):
 
 class SineWaveGenerator:
     """
-    Generates a sine wave on GPIO 13 using Sinusoidal PWM (SPWM).
+    Generates a sine wave on GPIO 12 using Sinusoidal PWM (SPWM).
 
     Frequency is set by changing the time per LUT slot.
     Amplitude is set by scaling the duty cycle swing around 50%.
@@ -63,7 +65,8 @@ class SineWaveGenerator:
     def __init__(self, pi, debug=False):
         self._pi        = pi
         self._frequency = MIN_FREQ
-        self._amplitude = 0.5
+        self._amplitude = 0.0   # internal fraction 0.0–1.0
+        self._amp_v     = 0.0   # user-facing volts
         self._running   = False
         self._wave_id   = None
         self._debug     = debug
@@ -124,13 +127,14 @@ class SineWaveGenerator:
         if self._debug:
             print(f"[SineWave] frequency → {self._frequency} Hz")
 
-    def set_amplitude(self, amplitude):
-        """Set amplitude fraction 0.0–1.0. Rebuilds wave if running."""
-        self._amplitude = _clamp(float(amplitude), 0.0, MAX_AMP)
+    def set_amplitude(self, amplitude_vpp):
+        """Set peak-to-peak output amplitude in volts (0.0–MAX_AMP ≈ 9.9 Vpp). Rebuilds wave if running."""
+        self._amp_v     = _clamp(float(amplitude_vpp), 0.0, MAX_AMP)
+        self._amplitude = self._amp_v / MAX_AMP   # convert to internal fraction
         if self._running:
             self._apply()
         if self._debug:
-            print(f"[SineWave] amplitude → {self._amplitude:.2f}")
+            print(f"[SineWave] amplitude → {self._amp_v:.2f} Vpp  (fraction={self._amplitude:.3f})")
 
     def start(self):
         """Start the sine wave output."""
@@ -158,7 +162,7 @@ class SineWaveGenerator:
 
     @property
     def amplitude(self):
-        return self._amplitude
+        return self._amp_v   # returns volts
 
 
 if __name__ == "__main__":
@@ -170,28 +174,3 @@ if __name__ == "__main__":
 
     gen = SineWaveGenerator(pi, debug=True)
 
-    try:
-        print("1kHz at 50% amplitude for 5s...")
-        gen.set_frequency(1000)
-        gen.set_amplitude(0.5)
-        gen.start()
-        time.sleep(5)
-
-        print("Sweeping frequency: 100 → 500 → 1k → 2k → 5k → 10k Hz")
-        for f in [100, 500, 1000, 2000, 5000, 10000]:
-            gen.set_frequency(f)
-            print(f"  {f} Hz")
-            time.sleep(2)
-
-        print("Sweeping amplitude 0.1 → 1.0 at 1kHz")
-        gen.set_frequency(1000)
-        for a in [0.1, 0.25, 0.5, 0.75, 1.0]:
-            gen.set_amplitude(a)
-            print(f"  amp={a:.2f}")
-            time.sleep(2)
-
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-    finally:
-        gen.cleanup()
-        pi.stop()

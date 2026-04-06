@@ -163,7 +163,7 @@ def main():
     pi.set_glitch_filter(BTN_PIN, 10_000)
 
     freq   = 1000
-    amp    = 0.5
+    amp    = 0.0        # peak output volts
     output = False
     gen    = SineWaveGenerator(pi, debug=True)
 
@@ -172,7 +172,7 @@ def main():
             status = "ON" if output else "OFF"
             choice = _pick(pi, lcd, [
                 f"Freq: {freq} Hz",
-                f"Amp:  {amp:.2f}",
+                f"Amp:  {amp:.2f} Vpp",
                 f"Output: {status}",
                 "Quit",
             ])
@@ -188,7 +188,7 @@ def main():
             elif choice.startswith("Amp"):
                 val = _adjust(pi, lcd, "Amplitude", amp,
                               0.0, MAX_AMP, AMP_STEP,
-                              lambda v: f"{v:.2f}")
+                              lambda v: f"{v:.2f} Vpp")
                 if val is not None:
                     amp = val
                     gen.set_amplitude(amp)
