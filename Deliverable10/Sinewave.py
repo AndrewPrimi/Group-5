@@ -32,7 +32,7 @@ Amplitude:
 import math
 import pigpio
 
-PWM_GPIO  = 13
+PWM_GPIO  = 12
 N_SAMPLES = 32        # LUT points per sine cycle
 
 MIN_FREQ  = 100       # Hz
