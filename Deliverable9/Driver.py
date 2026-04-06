@@ -30,7 +30,11 @@ from callbacks import (
     wait_for_back,
 )
 
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Deliverable10'))
+
 from square_wave import SquareWaveGenerator, MIN_FREQ, MAX_FREQ, MAX_AMP, AMP_STEP, FREQ_STEP
+from Sinewave import SineWaveGenerator, MIN_FREQ as SW_MIN_FREQ, MAX_FREQ as SW_MAX_FREQ, FREQ_STEP as SW_FREQ_STEP, MAX_AMP as SW_MAX_AMP, AMP_STEP as SW_AMP_STEP
 from dc_reference_single import DCReferenceSingleGenerator, MIN_VOLT, MAX_VOLT
 
 from voltmeter import (
@@ -78,8 +82,9 @@ pi.set_pull_up_down(COMPARATOR1_PIN, pigpio.PUD_OFF)
 pi.set_pull_up_down(COMPARATOR2_PIN, pigpio.PUD_OFF)
 
 
-sq_gen = SquareWaveGenerator(pi, spi_ce0, debug=True)
-dc_ref = DCReferenceSingleGenerator(pi, spi_ce0, settle_time=0.001)
+sq_gen   = SquareWaveGenerator(pi, spi_ce0, debug=True)
+dc_ref   = DCReferenceSingleGenerator(pi, spi_ce0, settle_time=0.001)
+sine_gen = SineWaveGenerator(pi, debug=True)
 
 
 state = {
@@ -98,6 +103,11 @@ state = {
     # DC Reference
     'dc_voltage': 0.0,
     'dc_output_on': False,
+
+    # Sine wave
+    'sw_freq': 1000,
+    'sw_amp': 0.5,
+    'sw_output_on': False,
 }
 
 # Inject into callbacks module
@@ -108,8 +118,10 @@ def ensure_all_off():
     """Safely shut down all outputs and turn off the LCD."""
     sq_gen.stop()
     dc_ref.stop()
+    sine_gen.stop()
     state['fg_output_on'] = False
     state['dc_output_on'] = False
+    state['sw_output_on'] = False
     lcd.clear()
     lcd.backlight(False)
     lcd._inst(0x08)  # display off
@@ -454,6 +466,74 @@ def run_dc_output():
             return "MAIN"
 
 
+def run_sine_wave_menu():
+    while True:
+        choice = pick_menu(
+            "Sine Wave",
+            ["Frequency", "Amplitude", "Output", "Back", "Main"],
+        )
+
+        if choice == "Frequency":
+            val = adjust_value(
+                "SW Frequency",
+                state['sw_freq'],
+                SW_MIN_FREQ, SW_MAX_FREQ, SW_FREQ_STEP,
+                lambda v: f"{int(v)} Hz",
+            )
+            if val is not None:
+                state['sw_freq'] = int(val)
+                sine_gen.set_frequency(state['sw_freq'])
+
+        elif choice == "Amplitude":
+            val = adjust_value(
+                "SW Amplitude",
+                state['sw_amp'],
+                0.0, SW_MAX_AMP, SW_AMP_STEP,
+                lambda v: f"{v:.2f}",
+            )
+            if val is not None:
+                state['sw_amp'] = val
+                sine_gen.set_amplitude(state['sw_amp'])
+
+        elif choice == "Output":
+            while True:
+                out_choice = pick_menu("SW Output", ["On", "Off", "Back", "Main"])
+
+                if out_choice == "On":
+                    sine_gen.set_frequency(state['sw_freq'])
+                    sine_gen.set_amplitude(state['sw_amp'])
+                    sine_gen.start()
+                    state['sw_output_on'] = True
+                    wait_for_back(lambda: (
+                        "Sine Wave: ON",
+                        f"Freq: {state['sw_freq']} Hz",
+                        f"Amp:  {state['sw_amp']:.2f}",
+                        "Btn: back",
+                    ))
+                    sine_gen.stop()
+                    state['sw_output_on'] = False
+
+                elif out_choice == "Off":
+                    sine_gen.stop()
+                    state['sw_output_on'] = False
+
+                elif out_choice == "Back":
+                    sine_gen.stop()
+                    state['sw_output_on'] = False
+                    break
+
+                elif out_choice == "Main":
+                    sine_gen.stop()
+                    state['sw_output_on'] = False
+                    return "MAIN"
+
+        elif choice == "Back":
+            return "BACK"
+
+        elif choice == "Main":
+            return "MAIN"
+
+
 print("Starting...")
 ensure_all_off()
 try:
@@ -463,11 +543,14 @@ try:
         while True:
             choice = pick_menu(
                 "Mode Select",
-                ["Function Generator", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
+                ["Function Generator", "Sine Wave", "Ohmmeter", "Voltmeter", "DC Reference", "Back", "Main"],
             )
 
             if choice == "Function Generator":
                 result = run_function_generator_menu()
+
+            elif choice == "Sine Wave":
+                result = run_sine_wave_menu()
 
             elif choice == "Ohmmeter":
                 result = run_ohmmeter()
@@ -488,6 +571,7 @@ finally:
     print("Cleaning up...")
     sq_gen.cleanup()
     dc_ref.cleanup()
+    sine_gen.cleanup()
     clear_callbacks(state)
     lcd.close()
     pi.spi_close(spi_ce0)
