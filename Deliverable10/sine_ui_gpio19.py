@@ -5,12 +5,18 @@ import time
 import pigpio
 import i2c_lcd
 
+# ----------------------------
+# GPIO pins
+# ----------------------------
 PWM_GPIO = 19
 
 ENC_A = 22
 ENC_B = 27
 ENC_SW = 17
 
+# ----------------------------
+# Sine wave specs
+# ----------------------------
 MIN_FREQ = 1000
 MAX_FREQ = 10000
 FREQ_STEP = 500
@@ -18,6 +24,8 @@ FREQ_STEP = 500
 MIN_AMP = 0.0
 MAX_AMP = 10.0
 AMP_STEP = 0.625
+
+LCD_WIDTH = 20
 
 
 def _clamp(value, lo, hi):
@@ -39,7 +47,7 @@ class SineWaveGenerator:
         self._pi = pi
         self._frequency = MIN_FREQ
         self._amp_v = 0.0
-        self._amplitude = 0.0
+        self._amplitude = 0.0   # normalized 0 to 1
         self._running = False
         self._wave_id = None
         self._debug = debug
@@ -66,6 +74,7 @@ class SineWaveGenerator:
         pulses = []
 
         for sample in lut:
+            # Positive-only PWM sine
             duty = _clamp(0.5 + self._amplitude * 0.5 * sample, 0.0, 1.0)
 
             high_us = max(1, round(duty * slot_us))
@@ -92,6 +101,7 @@ class SineWaveGenerator:
         if wave_id < 0:
             print(f"[SineWave] wave_create failed (error {wave_id})")
             return
+
         self._pi.wave_send_repeat(wave_id)
         self._wave_id = wave_id
 
@@ -99,20 +109,27 @@ class SineWaveGenerator:
         self._frequency = _snap_frequency(frequency)
         if self._running:
             self._apply()
+
         if self._debug:
             print(f"[SineWave] frequency -> {self._frequency} Hz")
 
     def set_amplitude(self, amplitude_v):
         self._amp_v = _snap_amplitude(amplitude_v)
         self._amplitude = self._amp_v / MAX_AMP
+
         if self._running:
             self._apply()
+
         if self._debug:
-            print(f"[SineWave] amplitude -> {self._amp_v:.3f} V")
+            print(
+                f"[SineWave] amplitude -> {self._amp_v:.3f} V "
+                f"(fraction={self._amplitude:.3f})"
+            )
 
     def start(self):
         self._running = True
         self._apply()
+
         if self._debug:
             print("[SineWave] started")
 
@@ -122,6 +139,7 @@ class SineWaveGenerator:
         self._pi.wave_clear()
         self._running = False
         self._wave_id = None
+
         if self._debug:
             print("[SineWave] stopped")
 
