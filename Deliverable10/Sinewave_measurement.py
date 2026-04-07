@@ -4,7 +4,7 @@ import time
 GPIO_PIN = 5  # Comparator output
 
 class FrequencyMeter:
-    def __init__(self, pi, gpio_pin=GPIO_PIN, min_dt_us=100, max_updates=8):
+    def __init__(self, pi, gpio_pin=GPIO_PIN, min_dt_us=100, max_updates=20):
         self.pi = pi
         self.gpio_pin = gpio_pin
 
@@ -14,15 +14,16 @@ class FrequencyMeter:
 
         self.update_count = 0
         self.max_updates = max_updates
-        self.stopped = False
+        self.locked = False  # becomes True after 20 updates
 
         pi.set_mode(self.gpio_pin, pigpio.INPUT)
 
+        # Register callback
         self.cb = pi.callback(self.gpio_pin, pigpio.RISING_EDGE, self._cb)
 
     def _cb(self, gpio, level, tick):
-
-        if self.stopped:
+        # If locked, ignore further updates
+        if self.locked:
             return
 
         if self.last_tick is not None:
@@ -35,13 +36,12 @@ class FrequencyMeter:
 
                 self.update_count += 1
 
-                print(f"[{self.update_count}/8] New max dt: {dt} us -> {self.frequency:.2f} Hz")
+                print(f"[{self.update_count}/20] New max dt: {dt} us -> {self.frequency:.2f} Hz")
 
+                # Lock after reaching 20 updates
                 if self.update_count >= self.max_updates:
-                    self.stopped = True
-                    print("Measurement stopped after 8 updates.")
-
-                    self.cb.cancel()
+                    self.locked = True
+                    print("Locked value. Now continuously reporting...")
 
         self.last_tick = tick
 
@@ -62,11 +62,13 @@ if __name__ == "__main__":
     if not pi.connected:
         raise SystemExit("Run 'sudo pigpiod' first.")
 
-    meter = FrequencyMeter(pi, min_dt_us=100, max_updates=8)
+    meter = FrequencyMeter(pi, min_dt_us=100, max_updates=20)
 
     try:
         while True:
-            time.sleep(1)
+            if meter.locked:
+                print(f"Locked Frequency: {meter.get_frequency():.2f} Hz | dt: {meter.get_max_dt()} us")
+            time.sleep(0.5)
 
     except KeyboardInterrupt:
         pass
