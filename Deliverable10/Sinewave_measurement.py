@@ -1,6 +1,7 @@
 import pigpio
 
 GPIO_PIN = 5  # Comparator output
+MIN_DT_US = 50
 
 class FrequencyMeter:
     def __init__(self, pi, debug=False):
@@ -19,11 +20,15 @@ class FrequencyMeter:
         if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
 
-            if dt > 0:
+            "if dt > 0:
                 self.frequency = 1_000_000 / dt
 
                 if self.debug:
-                    print(f"[Freq] dt={dt} us → f={self.frequency:.2f} Hz")
+                    print(f[Freq] dt={dt} us → f={self.frequency:.2f} Hz)"
+            if dt < MIN_DT_US:
+                return
+
+            self.frequency = 1_000_000 / dt
 
         self.last_tick = tick
 
