@@ -25,28 +25,6 @@ class FrequencyMeter:
         if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
 
-            """if dt < MIN_DT_US:
-                return
-
-            self.frequency = 1_000_000 / dt
-
-        self.last_tick = tick"""
-
-        """if self.last_tick is not None:
-            dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
-
-            if dt >= MIN_DT_US:
-                return
-
-            self.dt_buffer.append(dt)
-
-            if len(self.dt_buffer) == MEDIAN_LEN:
-                dt_median = sorted(self.dt_buffer)[MEDIAN_LEN // 2]
-                self.frequency = 1_000_000 / dt_median
-
-                if self.debug:
-                    print(f"DTs: {list(self.dt_buffer)}, median dt: {dt_median}, freq: {self.frequency:.2f} Hz")"""
-
             if dt > self.max_dt:
                 self.max_dt = dt
                 self.frequency = 1_000_000 / dt  # Hz
