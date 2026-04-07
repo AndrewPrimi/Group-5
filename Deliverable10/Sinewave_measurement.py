@@ -4,7 +4,7 @@ import time
 GPIO_PIN = 5  # Comparator output
 
 class FrequencyMeter:
-    def __init__(self, pi, gpio_pin=GPIO_PIN, min_dt_us=100, max_updates=20):
+    def __init__(self, pi, gpio_pin=GPIO_PIN, min_dt_us=100):
         self.pi = pi
         self.gpio_pin = gpio_pin
 
@@ -13,13 +13,37 @@ class FrequencyMeter:
         self.min_dt_us = min_dt_us  # running max dt
 
         self.update_count = 0
-        self.max_updates = max_updates
-        self.locked = False  # becomes True after 20 updates
+        self.locked = False
 
         pi.set_mode(self.gpio_pin, pigpio.INPUT)
 
         # Register callback
         self.cb = pi.callback(self.gpio_pin, pigpio.RISING_EDGE, self._cb)
+
+    def get_required_samples(self, dt):
+        """
+        Adaptive sample count based on dt.
+
+        At 1000 us (about 1000 Hz) -> 20 samples
+        At 100 us (about 10000 Hz) -> 8 samples
+
+        Values in between are linearly interpolated.
+        """
+        dt_high = 1000  # us -> 1000 Hz
+        dt_low = 100    # us -> 10000 Hz
+
+        samples_high = 20
+        samples_low = 8
+
+        if dt >= dt_high:
+            return samples_high
+        elif dt <= dt_low:
+            return samples_low
+        else:
+            # Linear interpolation
+            ratio = (dt - dt_low) / (dt_high - dt_low)
+            samples = samples_low + ratio * (samples_high - samples_low)
+            return round(samples)
 
     def _cb(self, gpio, level, tick):
         # If locked, ignore further updates
@@ -36,10 +60,15 @@ class FrequencyMeter:
 
                 self.update_count += 1
 
-                print(f"[{self.update_count}/20] New max dt: {dt} us -> {self.frequency:.2f} Hz")
+                required_samples = self.get_required_samples(dt)
 
-                # Lock after reaching 20 updates
-                if self.update_count >= self.max_updates:
+                print(
+                    f"[{self.update_count}/{required_samples}] "
+                    f"New max dt: {dt} us -> {self.frequency:.2f} Hz"
+                )
+
+                # Lock once we hit the required number of samples for this dt
+                if self.update_count >= required_samples:
                     self.locked = True
                     print("Locked value. Now continuously reporting...")
 
@@ -62,12 +91,15 @@ if __name__ == "__main__":
     if not pi.connected:
         raise SystemExit("Run 'sudo pigpiod' first.")
 
-    meter = FrequencyMeter(pi, min_dt_us=100, max_updates=20)
+    meter = FrequencyMeter(pi, min_dt_us=100)
 
     try:
         while True:
             if meter.locked:
-                print(f"Locked Frequency: {meter.get_frequency():.2f} Hz | dt: {meter.get_max_dt()} us")
+                print(
+                    f"Locked Frequency: {meter.get_frequency():.2f} Hz | "
+                    f"dt: {meter.get_max_dt()} us"
+                )
             time.sleep(0.5)
 
     except KeyboardInterrupt:
