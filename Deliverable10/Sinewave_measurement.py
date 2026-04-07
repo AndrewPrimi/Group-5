@@ -23,31 +23,34 @@ class FrequencyMeter:
 
     def get_required_samples(self, dt):
         """
-        Adaptive sample count based on dt.
+        Adaptive sample count based on FREQUENCY, not dt.
 
-        Rules:
-        - Around 1 kHz (dt about 1000 us): always use 20 samples
-        - Around 10 kHz (dt about 100 us): always use 8 samples
-        - Between them: scale gradually
+        Desired behavior:
+        - 1 kHz  -> 20 samples
+        - 5 kHz  -> 14 samples
+        - 10 kHz -> 8 samples
         """
 
-        # Force anything near 1 kHz to use 20
-        if dt >= 900:
-            return 20
+        freq = 1_000_000 / dt  # Hz
 
-        # Force anything near 10 kHz to use 8
-        if dt <= 150:
-            return 8
+        freq_low = 1000    # 1 kHz
+        freq_high = 10000  # 10 kHz
 
-        # Linearly interpolate between 150 us and 900 us
-        dt_low = 150
-        dt_high = 900
-        samples_low = 8
-        samples_high = 20
+        samples_low_freq = 20   # at 1 kHz
+        samples_high_freq = 8   # at 10 kHz
 
-        ratio = (dt - dt_low) / (dt_high - dt_low)
-        samples = samples_low + ratio * (samples_high - samples_low)
-        return round(samples)
+        if freq <= freq_low:
+            return samples_low_freq
+
+        if freq >= freq_high:
+            return samples_high_freq
+
+        # Linear interpolation in frequency
+        ratio = (freq - freq_low) / (freq_high - freq_low)
+        samples = samples_low_freq - ratio * (samples_low_freq - samples_high_freq)
+
+        # floor instead of round so 5 kHz becomes 14 instead of 15
+        return int(samples)
 
     def _cb(self, gpio, level, tick):
         if self.locked:
@@ -62,7 +65,6 @@ class FrequencyMeter:
                 self.frequency = 1_000_000 / dt
                 self.update_count += 1
 
-                # Determine required samples from the current accepted dt
                 self.required_samples = self.get_required_samples(dt)
 
                 print(
