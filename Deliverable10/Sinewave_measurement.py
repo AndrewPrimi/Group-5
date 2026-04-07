@@ -3,7 +3,6 @@ import time
 #from collections import deque
 
 GPIO_PIN = 5  # Comparator output
-min_dt_us = 100
 
 class FrequencyMeter:
     def __init__(self, pi, debug=False):
@@ -14,6 +13,7 @@ class FrequencyMeter:
         self.frequency = 0.0
 
         #self.dt_buffer = deque(maxlen=5) # this
+        self.min_dt_us = 100
         
         pi.set_mode(GPIO_PIN, pigpio.INPUT)
 
@@ -24,9 +24,9 @@ class FrequencyMeter:
         if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
 
-            if dt > min_dt_us:
+            if dt > self.min_dt_us:
                 self.frequency = 1_000_000 / dt  # Hz
-                min_dt_us = dt
+                self.min_dt_us = dt
 
                 if self.debug:
                     print(f"New max dt: {dt} µs → frequency: {self.frequency:.2f} Hz")
