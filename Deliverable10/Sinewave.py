@@ -36,7 +36,7 @@ N_SAMPLES = 32        # LUT points per sine cycle
 
 MIN_FREQ  = 100       # Hz
 MAX_FREQ  = 10_000    # Hz
-FREQ_STEP = 10        # Hz per encoder click
+FREQ_STEP = 500       # Hz per encoder click
 
 GAIN      = 3         # analog gain stage multiplier
 VREF      = 3.3       # GPIO high voltage (V)
