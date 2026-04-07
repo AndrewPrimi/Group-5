@@ -20,11 +20,6 @@ class FrequencyMeter:
         if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
 
-            "if dt > 0:
-                self.frequency = 1_000_000 / dt
-
-                if self.debug:
-                    print(f[Freq] dt={dt} us → f={self.frequency:.2f} Hz)"
             if dt < MIN_DT_US:
                 return
 
