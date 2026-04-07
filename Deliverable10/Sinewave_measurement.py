@@ -3,8 +3,7 @@ import time
 from collections import deque
 
 GPIO_PIN = 5  # Comparator output
-MIN_DT_US = 50
-MEDIAN_LEN = 5
+#MIN_DT_US = 100
 
 class FrequencyMeter:
     def __init__(self, pi, debug=False):
@@ -12,9 +11,10 @@ class FrequencyMeter:
         self.debug = debug
 
         self.last_tick = None
+        self.max_dt = 0 # this max dt
         self.frequency = 0.0
 
-        self.dt_buffer = deque(maxlen=5) # this
+        #self.dt_buffer = deque(maxlen=5) # this
         
         pi.set_mode(GPIO_PIN, pigpio.INPUT)
 
@@ -22,20 +22,20 @@ class FrequencyMeter:
         self.cb = pi.callback(GPIO_PIN, pigpio.RISING_EDGE, self._cb)
 
     def _cb(self, gpio, level, tick):
-        """if self.last_tick is not None:
+        if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
 
-            if dt < MIN_DT_US:
+            """if dt < MIN_DT_US:
                 return
 
             self.frequency = 1_000_000 / dt
 
         self.last_tick = tick"""
 
-        if self.last_tick is not None:
+        """if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)  # microseconds
 
-            if dt < MIN_DT_US:
+            if dt >= MIN_DT_US:
                 return
 
             self.dt_buffer.append(dt)
@@ -45,7 +45,14 @@ class FrequencyMeter:
                 self.frequency = 1_000_000 / dt_median
 
                 if self.debug:
-                    print(f"DTs: {list(self.dt_buffer)}, median dt: {dt_median}, freq: {self.frequency:.2f} Hz")
+                    print(f"DTs: {list(self.dt_buffer)}, median dt: {dt_median}, freq: {self.frequency:.2f} Hz")"""
+
+            if dt > self.max_dt:
+                self.max_dt = dt
+                self.frequency = 1_000_000 / dt  # Hz
+
+                if self.debug:
+                    print(f"New max dt: {dt} µs → frequency: {self.frequency:.2f} Hz")
                     
         self.last_tick = tick
 
