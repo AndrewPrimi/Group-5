@@ -1,46 +1,18 @@
-"""
-sine_ui.py
-
-Sine wave generator UI page for the Electronics Tool Bench.
-
-Uses:
-- Existing LCD object from your working project
-- Existing pigpio connection
-- GPIO19 for sine output
-- GPIO22 / GPIO27 for rotary encoder
-- GPIO17 for push button
-
-Specs:
-- Frequency: 1 kHz to 10 kHz in 500 Hz steps
-- Amplitude: 0 V to 10 V in 0.625 V steps
-- Positive-only sine
-- Output turns off when leaving page
-"""
+#!/usr/bin/env python3
 
 import math
 import time
 import pigpio
+import i2c_lcd
 
-
-# ----------------------------
-# Hardware pins
-# ----------------------------
 PWM_GPIO = 19
+
 ENC_A = 22
 ENC_B = 27
 ENC_SW = 17
 
-# ----------------------------
-# LCD size
-# ----------------------------
-LCD_COLS = 20
-LCD_ROWS = 4
-
-# ----------------------------
-# Sine generator specs
-# ----------------------------
 MIN_FREQ = 1000
-MAX_FREQ = 10_000
+MAX_FREQ = 10000
 FREQ_STEP = 500
 
 MIN_AMP = 0.0
@@ -63,18 +35,17 @@ def _snap_amplitude(amp):
 
 
 class SineWaveGenerator:
-    def __init__(self, pi, gpio=PWM_GPIO, debug=False):
+    def __init__(self, pi, debug=False):
         self._pi = pi
-        self._gpio = gpio
         self._frequency = MIN_FREQ
         self._amp_v = 0.0
-        self._amplitude = 0.0   # normalized 0..1
+        self._amplitude = 0.0
         self._running = False
         self._wave_id = None
         self._debug = debug
 
-        self._pi.set_mode(self._gpio, pigpio.OUTPUT)
-        self._pi.write(self._gpio, 0)
+        self._pi.set_mode(PWM_GPIO, pigpio.OUTPUT)
+        self._pi.write(PWM_GPIO, 0)
 
     def _get_samples(self):
         if self._frequency <= 2000:
@@ -90,13 +61,11 @@ class SineWaveGenerator:
 
         slot_us = max(2, round(1_000_000 / (self._frequency * N)))
 
-        on_mask = 1 << self._gpio
-        off_mask = 1 << self._gpio
-
+        on_mask = 1 << PWM_GPIO
+        off_mask = 1 << PWM_GPIO
         pulses = []
 
         for sample in lut:
-            # Positive-only sine using PWM duty pattern
             duty = _clamp(0.5 + self._amplitude * 0.5 * sample, 0.0, 1.0)
 
             high_us = max(1, round(duty * slot_us))
@@ -123,7 +92,6 @@ class SineWaveGenerator:
         if wave_id < 0:
             print(f"[SineWave] wave_create failed (error {wave_id})")
             return
-
         self._pi.wave_send_repeat(wave_id)
         self._wave_id = wave_id
 
@@ -131,42 +99,38 @@ class SineWaveGenerator:
         self._frequency = _snap_frequency(frequency)
         if self._running:
             self._apply()
-
         if self._debug:
             print(f"[SineWave] frequency -> {self._frequency} Hz")
 
     def set_amplitude(self, amplitude_v):
         self._amp_v = _snap_amplitude(amplitude_v)
         self._amplitude = self._amp_v / MAX_AMP
-
         if self._running:
             self._apply()
-
         if self._debug:
-            print(
-                f"[SineWave] amplitude -> {self._amp_v:.3f} V "
-                f"(fraction={self._amplitude:.3f})"
-            )
+            print(f"[SineWave] amplitude -> {self._amp_v:.3f} V")
 
     def start(self):
         self._running = True
         self._apply()
-
         if self._debug:
             print("[SineWave] started")
 
     def stop(self):
         self._pi.wave_tx_stop()
-        self._pi.write(self._gpio, 0)
+        self._pi.write(PWM_GPIO, 0)
         self._pi.wave_clear()
         self._running = False
         self._wave_id = None
-
         if self._debug:
             print("[SineWave] stopped")
 
     def cleanup(self):
         self.stop()
+
+    @property
+    def is_on(self):
+        return self._running
 
     @property
     def frequency(self):
@@ -175,10 +139,6 @@ class SineWaveGenerator:
     @property
     def amplitude(self):
         return self._amp_v
-
-    @property
-    def is_on(self):
-        return self._running
 
 
 class RotaryInput:
@@ -267,16 +227,12 @@ class SineGeneratorUI:
     MENU_ITEMS = ["Frequency", "Amplitude", "Output", "Back"]
 
     def __init__(self, pi, lcd, debug=False):
-        """
-        pi  = your existing pigpio.pi() object
-        lcd = your existing working LCD object
-        """
         self.pi = pi
         self.lcd = lcd
         self.debug = debug
 
         self.encoder = RotaryInput(self.pi)
-        self.gen = SineWaveGenerator(self.pi, gpio=PWM_GPIO, debug=debug)
+        self.gen = SineWaveGenerator(self.pi, debug=debug)
 
         self.menu_index = 0
         self.mode = "menu"
@@ -285,24 +241,24 @@ class SineGeneratorUI:
         self.running = False
 
     def lcd_show(self, lines):
-        self.lcd.clear()
-        for row, text in enumerate(lines[:LCD_ROWS]):
-            self.lcd.move_to(0, row)
-            self.lcd.putstr(text[:LCD_COLS].ljust(LCD_COLS))
+        for row in range(4):
+            if row < len(lines):
+                self.lcd.put_line(row, lines[row])
+            else:
+                self.lcd.put_line(row, "")
 
     def draw(self):
         if self.mode == "menu":
             line0 = "Sine Generator"
-
-            line1 = ("> " if self.menu_index == 0 else "  ") + f"Freq:{self.freq:5d}Hz"
-            line2 = ("> " if self.menu_index == 1 else "  ") + f"Amp :{self.amp:5.3f}V"
+            line1 = (">" if self.menu_index == 0 else " ") + f"Freq {self.freq:5d}Hz"
+            line2 = (">" if self.menu_index == 1 else " ") + f"Amp  {self.amp:5.3f}V"
 
             if self.menu_index == 2:
-                line3 = f"> Output:{'ON ' if self.gen.is_on else 'OFF'}"
+                line3 = ">" + f"Output {'ON' if self.gen.is_on else 'OFF'}"
             elif self.menu_index == 3:
-                line3 = "> Back"
+                line3 = ">Back"
             else:
-                line3 = f"  Output:{'ON ' if self.gen.is_on else 'OFF'}"
+                line3 = " " + f"Output {'ON' if self.gen.is_on else 'OFF'}"
 
             self.lcd_show([line0, line1, line2, line3])
 
@@ -311,7 +267,7 @@ class SineGeneratorUI:
                 "Adjust Frequency",
                 f"{self.freq:5d} Hz",
                 "Rotate to change",
-                "Press=Save Hold=Exit"
+                "Press=Save"
             ])
 
         elif self.mode == "adjust_amp":
@@ -319,7 +275,7 @@ class SineGeneratorUI:
                 "Adjust Amplitude",
                 f"{self.amp:5.3f} V",
                 "Rotate to change",
-                "Press=Save Hold=Exit"
+                "Press=Save"
             ])
 
     def toggle_output(self):
@@ -408,3 +364,22 @@ class SineGeneratorUI:
     def cleanup(self):
         self.gen.cleanup()
         self.encoder.cleanup()
+
+
+if __name__ == "__main__":
+    pi = pigpio.pi()
+    if not pi.connected:
+        raise SystemExit("Run 'sudo pigpiod' first.")
+
+    lcd = i2c_lcd.lcd(pi, width=20)
+
+    app = SineGeneratorUI(pi, lcd, debug=True)
+
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        app.cleanup()
+        lcd.close()
+        pi.stop()
