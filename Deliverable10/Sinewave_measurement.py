@@ -14,6 +14,7 @@ class FrequencyMeter:
 
         self.update_count = 0
         self.locked = False
+        self.required_samples = None
 
         pi.set_mode(self.gpio_pin, pigpio.INPUT)
 
@@ -24,29 +25,31 @@ class FrequencyMeter:
         """
         Adaptive sample count based on dt.
 
-        At 1000 us (about 1000 Hz) -> 20 samples
-        At 100 us (about 10000 Hz) -> 8 samples
-
-        Values in between are linearly interpolated.
+        Rules:
+        - Around 1 kHz (dt about 1000 us): always use 20 samples
+        - Around 10 kHz (dt about 100 us): always use 8 samples
+        - Between them: scale gradually
         """
-        dt_high = 1000  # us -> 1000 Hz
-        dt_low = 100    # us -> 10000 Hz
 
-        samples_high = 20
+        # Force anything near 1 kHz to use 20
+        if dt >= 900:
+            return 20
+
+        # Force anything near 10 kHz to use 8
+        if dt <= 150:
+            return 8
+
+        # Linearly interpolate between 150 us and 900 us
+        dt_low = 150
+        dt_high = 900
         samples_low = 8
+        samples_high = 20
 
-        if dt >= dt_high:
-            return samples_high
-        elif dt <= dt_low:
-            return samples_low
-        else:
-            # Linear interpolation
-            ratio = (dt - dt_low) / (dt_high - dt_low)
-            samples = samples_low + ratio * (samples_high - samples_low)
-            return round(samples)
+        ratio = (dt - dt_low) / (dt_high - dt_low)
+        samples = samples_low + ratio * (samples_high - samples_low)
+        return round(samples)
 
     def _cb(self, gpio, level, tick):
-        # If locked, ignore further updates
         if self.locked:
             return
 
@@ -57,18 +60,17 @@ class FrequencyMeter:
             if dt >= self.min_dt_us:
                 self.min_dt_us = dt
                 self.frequency = 1_000_000 / dt
-
                 self.update_count += 1
 
-                required_samples = self.get_required_samples(dt)
+                # Determine required samples from the current accepted dt
+                self.required_samples = self.get_required_samples(dt)
 
                 print(
-                    f"[{self.update_count}/{required_samples}] "
+                    f"[{self.update_count}/{self.required_samples}] "
                     f"New max dt: {dt} us -> {self.frequency:.2f} Hz"
                 )
 
-                # Lock once we hit the required number of samples for this dt
-                if self.update_count >= required_samples:
+                if self.update_count >= self.required_samples:
                     self.locked = True
                     print("Locked value. Now continuously reporting...")
 
