@@ -117,36 +117,42 @@ Unknown Voltage (Vin)
 
 The MCP4131 digital potentiometer acts as a **programmable voltage divider** — it becomes our DAC. The LM339 comparator answers the question: "Is Vin greater than or less than Vdac?"
 
-### 5-Bit SAR Algorithm (voltmeter.py and ohmmeter.py)
+### 7-Bit SAR Algorithm (sar_logic.py)
+
+The SAR uses a **binary search** over all 128 wiper positions (0–127), which is the full 7-bit range of the MCP4131. Each iteration halves the search window, starting from the MSB (midpoint of the full range) down to the LSB.
 
 ```python
-step = 0
-for bit_pos in range(4, -1, -1):      # Bits 4, 3, 2, 1, 0
-    trial = step | (1 << bit_pos)      # Try setting this bit
-    _write_dac(pi, spi, trial)         # Set Vdac = trial voltage
-    time.sleep(0.02)                   # Wait for DAC to settle
-    if pi.read(comp_pin) == 0:         # comp=0 means Vdac ≤ Vin → keep bit
-        step = trial                   # Keep the bit
-    # comp=1 means Vdac > Vin → discard bit (step unchanged)
+low = 0
+high = 127          # MAX_STEPS - 1
+
+while low <= high:
+    mid = (low + high) // 2   # start at step 63 (MSB first)
+    _write_step(mid)           # set Vdac
+    time.sleep(settle_time)
+    comp = pi.read(comparator_pin)
+    if comp == 1:              # Vdac > Vin → search lower half
+        high = mid - 1
+    else:                      # Vdac ≤ Vin → search upper half
+        low = mid + 1
+
+return high
 ```
 
-**Why 5 bits?** Our MCP4131 has 7-bit resolution (0–127 wiper positions), but we only use 5 bits (0–31). This gives us 32 measurement levels, keeping the code simple. The 5-bit step is then scaled to the 7-bit register:
+**Resolution:** 128 steps over ~10V → ~78mV per step.
 
-```
-dac_code = round(step * 127 / 31)
-```
+**Trace example** for Vin = 2.5V (step ≈ 83):
 
-**Trace example** for Vin = 2.5V (step ≈ 23):
+| Iteration | low | high | mid | comp | Action |
+|-----------|-----|------|-----|------|--------|
+| 1 | 0 | 127 | 63 | 0 | Vdac ≤ Vin → low=64 |
+| 2 | 64 | 127 | 95 | 1 | Vdac > Vin → high=94 |
+| 3 | 64 | 94 | 79 | 0 | Vdac ≤ Vin → low=80 |
+| 4 | 80 | 94 | 87 | 1 | Vdac > Vin → high=86 |
+| 5 | 80 | 86 | 83 | 1 | Vdac > Vin → high=82 |
+| 6 | 80 | 82 | 81 | 0 | Vdac ≤ Vin → low=82 |
+| 7 | 82 | 82 | 82 | 0 | Vdac ≤ Vin → low=83 |
 
-| Iteration | Bit | Trial | Vdac | comp | Action |
-|-----------|-----|-------|------|------|--------|
-| 1 | 4 | 16 | ~2.2V | 0 | Keep → step=16 |
-| 2 | 3 | 24 | ~3.3V | 1 | Discard |
-| 3 | 2 | 20 | ~2.7V | 1 | Discard |
-| 4 | 1 | 18 | ~2.4V | 0 | Keep → step=18 |
-| 5 | 0 | 19 | ~2.5V | 0 | Keep → step=19 |
-
-Result: step = 19, which `step_to_voltage(19)` maps to ~2.5V.
+Result: step = 82, which `step_to_voltage(82)` maps to ~2.5V.
 
 ### Why median filtering?
 
@@ -162,14 +168,14 @@ We take 11 measurements and use the **median** (the 6th value after sorting).
 - **Why 11?** Odd number so there is a unique middle value. 11 is a good balance between speed and noise rejection.
 - **Why median over averaging?** Our signal is quantized — the SAR returns an integer step. Averaging would produce fractional steps that don't correspond to real measurements. The median always returns a real, measured step.
 
-### Comparator Logic — Why comp=0 means "keep"
+### Comparator Logic — Why comp=1 means "keep"
 
 The LM339 is open-collector with an **external pull-up** on the PCB:
 - When Vdac **≤** Vin: comparator output transistor is **OFF** → pin pulled HIGH by resistor → GPIO reads **1**  
 - When Vdac **>** Vin: comparator output transistor is **ON** → pin pulled LOW → GPIO reads **0**
 
-So `comp == 0` tells us Vdac > Vin → the step is too high → discard.  
-And `comp == 1` tells us Vdac ≤ Vin → the step is a candidate → keep.
+So `comp == 1` tells us Vdac ≤ Vin → the step is a candidate → keep.  
+And `comp == 0` tells us Vdac > Vin → the step is too high → discard.
 
 **Wait — the code says `if comp == 0: step = trial` (KEEP when comp=0).** This seems backward from the above. In practice, the board's analog front-end inverts the signal before reaching the comparator's non-inverting input, so the effective polarity is: `comp=0 → Vdac ≤ Vin`. This was determined empirically by testing on the actual hardware.
 
