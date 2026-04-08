@@ -1,49 +1,40 @@
 """
-sine_measurement_ui.py
-
-UI for live sine wave frequency measurement using LCD + rotary encoder.
-
-Controls:
-  Rotate encoder  →  (unused for now)
-  Short press     →  exit
-  Long press      →  exit
+sine_measurement_ui.py – LCD UI for sine wave frequency measurement.
 
 Displays:
-  - Locking progress
-  - Live frequency
-  - Locked frequency + dt
+  - Sampling progress while acquiring frequency
+  - Locked frequency and dt once stable
+
+Controls:
+  Long press → exit
 """
 
-import time
-import pigpio
 import sys
 import os
+import time
+import pigpio
 
-from Sinewave_measurement import FrequencyMeter
-
-# ── GPIO ──────────────────────────────────────────────────────────────────────
-PIN_A       = 22
-PIN_B       = 27
-BTN_PIN     = 17
-GPIO_PIN    = 5   # comparator input
-
-DEBOUNCE_US = 200_000
-HOLD_US     = 2_000_000
-
-# ── Import LCD + encoder (same pattern as sine_ui) ────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Deliverable9'))
 
 import i2c_lcd
 import rotary_encoder
+from Sinewave_measurement import FrequencyMeter
+
+# ── GPIO ──────────────────────────────────────────────────────────────────────
+PIN_A         = 22
+PIN_B         = 27
+BTN_PIN       = 17
+DEBOUNCE_US   = 200_000
+HOLD_US       = 2_000_000
 
 # ── State ─────────────────────────────────────────────────────────────────────
 _state = {
-    'encoder_delta':     0,
-    'button_pressed':    False,
-    'long_press':        False,
-    'button_last_tick':  None,
+    'encoder_delta':    0,
+    'button_pressed':   False,
+    'long_press':       False,
+    'button_last_tick': None,
     'button_press_tick': None,
-    'active_callbacks':  [],
+    'active_callbacks': [],
 }
 
 # ── Callback helpers ──────────────────────────────────────────────────────────
@@ -55,15 +46,14 @@ def _clear_callbacks():
 
 
 def _reset():
-    _state['encoder_delta']     = 0
-    _state['button_pressed']    = False
-    _state['long_press']        = False
-    _state['button_last_tick']  = None
-    _state['button_press_tick'] = None
+    _state['encoder_delta']    = 0
+    _state['button_pressed']   = False
+    _state['long_press']       = False
+    _state['button_last_tick'] = None
 
 
 def _on_rotate(direction):
-    _state['encoder_delta'] -= direction   # not used but kept for consistency
+    _state['encoder_delta'] = _state['encoder_delta'] - direction
 
 
 def _on_button_edge(gpio, level, tick):
@@ -73,7 +63,6 @@ def _on_button_edge(gpio, level, tick):
             return
         _state['button_last_tick']  = tick
         _state['button_press_tick'] = tick
-
     elif level == 1:
         press_tick = _state['button_press_tick']
         if press_tick is not None:
@@ -92,56 +81,73 @@ def _attach(pi):
     _state['active_callbacks'] = [dec, cb]
 
 
-# ── UI ────────────────────────────────────────────────────────────────────────
+# ── Display logic ─────────────────────────────────────────────────────────────
 
-def run_sine_measurement_ui(state):
-    """
-    Runs the sine measurement UI page.
+def _draw_sampling(lcd, meter):
+    """Display sampling progress."""
+    lcd.put_line(0, "Measuring...")
+    
+    required = meter.required_samples or 0
+    count = meter.update_count
 
-    state: shared dict (must include 'pi')
-    """
+    lcd.put_line(1, f"Samples: {count}/{required}")
 
-    pi  = state["pi"]
+    if meter.get_frequency() > 0:
+        lcd.put_line(2, f"{meter.get_frequency():.1f} Hz")
+        lcd.put_line(3, f"dt: {meter.get_max_dt()} us")
+    else:
+        lcd.put_line(2, "Waiting signal...")
+        lcd.put_line(3, "")
+
+
+def _draw_locked(lcd, meter):
+    """Display locked frequency."""
+    lcd.put_line(0, "Locked")
+    lcd.put_line(1, f"{meter.get_frequency():.2f} Hz")
+    lcd.put_line(2, f"dt: {meter.get_max_dt()} us")
+    lcd.put_line(3, "Hold btn to exit")
+
+
+# ── Main UI ───────────────────────────────────────────────────────────────────
+
+def main():
+    pi = pigpio.pi()
+    if not pi.connected:
+        raise SystemExit("Run 'sudo pigpiod' first.")
+
     lcd = i2c_lcd.lcd(pi, width=20)
 
-    # GPIO setup (same style as sine_ui)
+    # GPIO setup
     pi.set_mode(PIN_A,   pigpio.INPUT); pi.set_pull_up_down(PIN_A,   pigpio.PUD_UP)
     pi.set_mode(PIN_B,   pigpio.INPUT); pi.set_pull_up_down(PIN_B,   pigpio.PUD_UP)
     pi.set_mode(BTN_PIN, pigpio.INPUT); pi.set_pull_up_down(BTN_PIN, pigpio.PUD_UP)
     pi.set_glitch_filter(BTN_PIN, 10_000)
 
-    meter = FrequencyMeter(pi, gpio_pin=GPIO_PIN, min_dt_us=100)
+    meter = FrequencyMeter(pi, min_dt_us=100)
 
     _reset()
     _attach(pi)
 
     try:
         while True:
-            # ── Exit conditions ──
-            if _state['button_pressed'] or _state['long_press']:
+            if meter.locked:
+                _draw_locked(lcd, meter)
+            else:
+                _draw_sampling(lcd, meter)
+
+            # Exit on long press
+            if _state['long_press']:
                 break
 
-            freq = meter.get_frequency()
-
-            if not meter.locked:
-                # ── Locking screen ──
-                req = meter.required_samples or "?"
-                lcd.put_line(0, "Measuring...")
-                lcd.put_line(1, f"{meter.update_count}/{req} samples")
-                lcd.put_line(2, f"{freq:8.2f} Hz")
-                lcd.put_line(3, "Btn: exit")
-
-            else:
-                # ── Locked screen ──
-                lcd.put_line(0, "Frequency Locked")
-                lcd.put_line(1, f"{freq:8.2f} Hz")
-                lcd.put_line(2, f"dt: {meter.get_max_dt()} us")
-                lcd.put_line(3, "Btn: exit")
-
-            time.sleep(0.2)
+            time.sleep(0.1)
 
     finally:
         meter.cleanup()
         _clear_callbacks()
         lcd.clear()
         lcd.close()
+        pi.stop()
+
+
+if __name__ == "__main__":
+    main()
