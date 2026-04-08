@@ -49,7 +49,7 @@ class FrequencyMeter:
         ratio = (freq - freq_low) / (freq_high - freq_low)
         samples = samples_low_freq - ratio * (samples_low_freq - samples_high_freq)
 
-        # floor instead of round so 5 kHz becomes 14 instead of 15
+        # floor instead of round
         return int(samples)
 
     def _cb(self, gpio, level, tick):
