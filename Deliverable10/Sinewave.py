@@ -139,6 +139,9 @@ class SineWaveGenerator:
 
     def _apply(self):
         step = self._amp_to_step(self._amp_v)
+
+        step = 127 - step
+        
         self._write_wiper0(step)
 
         wave_id = self._build_wave()
