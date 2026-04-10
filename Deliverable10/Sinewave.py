@@ -50,23 +50,26 @@ class SineWaveGenerator:
         step = int(_clamp(step, 0, 127))
         self._pi.spi_write(self._spi, bytes([CMD_WRITE_WIPER0, step]))
         if self._debug:
-            print(f"[Digipot] Wiper0 -> step {step}")
+            print(f"[Digipot] Wiper 0 -> step {step}")
 
     def _amp_to_step(self, amplitude_vpp):
-        # Linear mapping: 0 Vpp -> 0, MAX_AMP -> 127
         return round((amplitude_vpp / MAX_AMP) * 127)
 
     def _build_wave(self):
         N = self._get_samples()
+
         lut = [math.sin(2 * math.pi * i / N) for i in range(N)]
+
         slot_us = max(2, round(1_000_000 / (self._frequency * N)))
 
         on_mask  = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
+
         pulses = []
 
         for sample in lut:
             duty = _clamp(0.5 + self._amplitude * 0.5 * sample, 0.0, 1.0)
+
             high_us = max(1, round(duty * slot_us))
             low_us  = max(1, slot_us - high_us)
 
@@ -99,7 +102,9 @@ class SineWaveGenerator:
         self._wave_id = wave_id
 
     def set_frequency(self, frequency):
-        self._frequency = int(_clamp(int(frequency), MIN_FREQ, MAX_FREQ))
+        snapped = round(int(frequency) / FREQ_STEP) * FREQ_STEP
+        self._frequency = int(_clamp(snapped, MIN_FREQ, MAX_FREQ))
+
         if self._running:
             self._apply()
 
@@ -123,12 +128,19 @@ class SineWaveGenerator:
         self._running = True
         self._apply()
 
+        if self._debug:
+            print("[SineWave] started")
+
     def stop(self):
         self._pi.wave_tx_stop()
         self._pi.write(PWM_GPIO, 0)
         self._pi.wave_clear()
+
         self._running = False
         self._wave_id = None
+
+        if self._debug:
+            print("[SineWave] stopped")
 
     def cleanup(self):
         self.stop()
@@ -141,3 +153,26 @@ class SineWaveGenerator:
     @property
     def amplitude(self):
         return self._amp_v
+
+
+if __name__ == "__main__":
+    import time
+
+    pi = pigpio.pi()
+    if not pi.connected:
+        raise SystemExit("Run 'sudo pigpiod' first.")
+
+    gen = SineWaveGenerator(pi, debug=True)
+
+    gen.set_frequency(5000)
+    gen.set_amplitude(5.0)
+    gen.start()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+
+    gen.cleanup()
+    pi.stop()
