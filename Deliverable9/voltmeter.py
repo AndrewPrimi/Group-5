@@ -21,23 +21,27 @@ COMPARATOR1_PIN = 23
 
 
 def _write_dac(pi, spi_handle, step):
-    """Scale 5-bit step (0..31) to MCP4131 7-bit register (0..127)."""
+    """Scale 5-bit step (0..31) to MCP4131 7-bit register DAC (0..127)."""
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    pi.spi_write(spi_handle, [0x00, round(step * 127 / MCP4131_MAX_STEPS)])
+    dac_code = round(step * 127 / MCP4131_MAX_STEPS)
+    pi.spi_write(spi_handle, [0x00, dac_code])
 
 
 def _sar_measure(pi, spi_handle, comp_pin):
     """5-bit SAR: comp == 0 keeps bit, comp == 1 discards."""
     step = 0
-
+    
     for bit_pos in range(4, -1, -1):
+        """The trial is the step value plus the next significant bit."""
         trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
 
+        """The comp_pin read determines keep (0) or delete (1).""" 
         if pi.read(comp_pin) == 0:
             step = trial
 
+    """Write the final step value to convert to analog.""" 
     _write_dac(pi, spi_handle, step)
     return step
 
@@ -109,9 +113,12 @@ def step_to_tolerance(step):
     """Tolerance based on voltage gap between neighboring steps."""
     step = max(0, min(step, MCP4131_MAX_STEPS))
     if step == 0:
+        # use first 2 values of the lookup table
         return (STEP_TO_VOLT[1] - STEP_TO_VOLT[0]) / 2
     if step == MCP4131_MAX_STEPS:
+        # use last 2 values of the lookup table
         return (STEP_TO_VOLT[-1] - STEP_TO_VOLT[-2]) / 2
+    # use the surrounding 2 values of the step
     return (STEP_TO_VOLT[step + 1] - STEP_TO_VOLT[step - 1]) / 4
 
 
