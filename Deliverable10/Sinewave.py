@@ -12,6 +12,12 @@ VREF      = 3.3
 MAX_AMP   = VREF * GAIN
 AMP_STEP  = 0.5
 
+SPI_CHANNEL = 0
+SPI_BAUD    = 1_000_000
+
+CMD_WRITE_WIPER0 = 0x00
+CMD_WRITE_WIPER1 = 0x10
+
 
 def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
@@ -27,6 +33,8 @@ class SineWaveGenerator:
         self._wave_id   = None
         self._debug     = debug
 
+        self._spi = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
+
         pi.set_mode(PWM_GPIO, pigpio.OUTPUT)
         pi.write(PWM_GPIO, 0)
 
@@ -38,22 +46,27 @@ class SineWaveGenerator:
         else:
             return 16
 
+    def _write_wiper0(self, step):
+        step = int(_clamp(step, 0, 127))
+        self._pi.spi_write(self._spi, bytes([CMD_WRITE_WIPER0, step]))
+        if self._debug:
+            print(f"[Digipot] Wiper0 -> step {step}")
+
+    def _amp_to_step(self, amplitude_vpp):
+        # Linear mapping: 0 Vpp -> 0, MAX_AMP -> 127
+        return round((amplitude_vpp / MAX_AMP) * 127)
+
     def _build_wave(self):
         N = self._get_samples()
-
-        # Generate LUT dynamically
         lut = [math.sin(2 * math.pi * i / N) for i in range(N)]
-
         slot_us = max(2, round(1_000_000 / (self._frequency * N)))
 
         on_mask  = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
-
         pulses = []
 
         for sample in lut:
             duty = _clamp(0.5 + self._amplitude * 0.5 * sample, 0.0, 1.0)
-
             high_us = max(1, round(duty * slot_us))
             low_us  = max(1, slot_us - high_us)
 
@@ -68,12 +81,15 @@ class SineWaveGenerator:
         if self._debug:
             print(
                 f"[SineWave] freq={self._frequency}Hz "
-                f"N={N} slot={slot_us}µs pulses={len(pulses)} wave_id={wave_id}"
+                f"N={N} slot={slot_us}us pulses={len(pulses)} wave_id={wave_id}"
             )
 
         return wave_id
 
     def _apply(self):
+        step = self._amp_to_step(self._amp_v)
+        self._write_wiper0(step)
+
         wave_id = self._build_wave()
         if wave_id < 0:
             print(f"[SineWave] wave_create failed (error {wave_id})")
@@ -88,7 +104,7 @@ class SineWaveGenerator:
             self._apply()
 
         if self._debug:
-            print(f"[SineWave] frequency → {self._frequency} Hz")
+            print(f"[SineWave] frequency -> {self._frequency} Hz")
 
     def set_amplitude(self, amplitude_vpp):
         self._amp_v     = _clamp(float(amplitude_vpp), 0.0, MAX_AMP)
@@ -99,7 +115,7 @@ class SineWaveGenerator:
 
         if self._debug:
             print(
-                f"[SineWave] amplitude → {self._amp_v:.2f} Vpp "
+                f"[SineWave] amplitude -> {self._amp_v:.2f} Vpp "
                 f"(fraction={self._amplitude:.3f})"
             )
 
@@ -107,22 +123,16 @@ class SineWaveGenerator:
         self._running = True
         self._apply()
 
-        if self._debug:
-            print("[SineWave] started")
-
     def stop(self):
         self._pi.wave_tx_stop()
         self._pi.write(PWM_GPIO, 0)
         self._pi.wave_clear()
-
         self._running = False
         self._wave_id = None
 
-        if self._debug:
-            print("[SineWave] stopped")
-
     def cleanup(self):
         self.stop()
+        self._pi.spi_close(self._spi)
 
     @property
     def frequency(self):
@@ -131,25 +141,3 @@ class SineWaveGenerator:
     @property
     def amplitude(self):
         return self._amp_v
-
-
-if __name__ == "__main__":
-    import time
-
-    pi = pigpio.pi()
-    if not pi.connected:
-        raise SystemExit("Run 'sudo pigpiod' first.")
-
-    gen = SineWaveGenerator(pi, debug=True)
-
-    gen.set_amplitude(5.0)
-    gen.start()
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
-
-    gen.cleanup()
-    pi.stop()
