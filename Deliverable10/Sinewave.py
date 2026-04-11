@@ -7,26 +7,47 @@ MIN_FREQ = 1000
 MAX_FREQ = 10_000
 FREQ_STEP = 500
 
-# Project-required final output amplitude range
-FINAL_MAX_AMP = 10.0
-
-# Keep MAX_AMP so sine_ui.py can still import it
-MAX_AMP = FINAL_MAX_AMP
+MAX_AMP  = 10.0
 AMP_STEP = 0.625
 
 SPI_CHANNEL = 0
-SPI_BAUD = 1_000_000
+SPI_BAUD    = 1_000_000
 
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
-MAX_WIPER_STEP = 127
-
-# Measured maximum signal going INTO the digipot
-DIGIPOT_INPUT_MAX_VPP = 2.5
-
-# Gain after the digipot
-POST_DIGIPOT_GAIN = 4.0
+# A = PWM signal
+# B = ground
+# W = output
+#
+# This table is adjusted so that if your measured signal INTO the digipot
+# is 2.5 Vpp max, then:
+#   0.625 Vpp -> about 32
+#   1.250 Vpp -> about 64
+#   1.875 Vpp -> about 95
+#   2.500 Vpp -> 127
+#
+# Values above 2.5 Vpp will clamp to 127 until the analog gain stage after
+# the digipot is working correctly.
+AMP_CAL_TABLE = {
+    0.000: 0,
+    0.625: 32,
+    1.250: 64,
+    1.875: 95,
+    2.500: 127,
+    3.125: 127,
+    3.750: 127,
+    4.375: 127,
+    5.000: 127,
+    5.625: 127,
+    6.250: 127,
+    6.875: 127,
+    7.500: 127,
+    8.125: 127,
+    8.750: 127,
+    9.375: 127,
+    10.000: 127,
+}
 
 
 def _clamp(value, lo, hi):
@@ -35,12 +56,12 @@ def _clamp(value, lo, hi):
 
 class SineWaveGenerator:
     def __init__(self, pi, debug=False):
-        self._pi = pi
+        self._pi        = pi
         self._frequency = MIN_FREQ
-        self._final_amp_vpp = 0.0
-        self._running = False
-        self._wave_id = None
-        self._debug = debug
+        self._amp_v     = 0.0
+        self._running   = False
+        self._wave_id   = None
+        self._debug     = debug
 
         self._spi = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
@@ -51,7 +72,7 @@ class SineWaveGenerator:
         return 64
 
     def _write_wiper0(self, step):
-        step = int(_clamp(step, 0, MAX_WIPER_STEP))
+        step = int(_clamp(step, 0, 127))
         self._pi.spi_write(self._spi, bytes([CMD_WRITE_WIPER0, step]))
 
         if self._debug:
@@ -59,36 +80,34 @@ class SineWaveGenerator:
 
     def _snap_amplitude(self, amplitude_vpp):
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
-        return _clamp(round(snapped, 3), 0.0, FINAL_MAX_AMP)
+        return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
-    def _final_amp_to_digipot_step(self, requested_final_vpp):
-        """
-        Convert desired FINAL output amplitude to digipot step.
+    def _amp_to_step(self, amplitude_vpp):
+        amplitude_vpp = self._snap_amplitude(amplitude_vpp)
+        keys = sorted(AMP_CAL_TABLE.keys())
 
-        Assumptions:
-          digipot_output_vpp ~= DIGIPOT_INPUT_MAX_VPP * (step / 127)
-          final_output_vpp   ~= digipot_output_vpp * POST_DIGIPOT_GAIN
-        """
-        requested_final_vpp = self._snap_amplitude(requested_final_vpp)
+        if amplitude_vpp <= keys[0]:
+            return AMP_CAL_TABLE[keys[0]]
+        if amplitude_vpp >= keys[-1]:
+            return AMP_CAL_TABLE[keys[-1]]
 
-        if POST_DIGIPOT_GAIN <= 0 or DIGIPOT_INPUT_MAX_VPP <= 0:
-            return 0
+        for i in range(len(keys) - 1):
+            x0 = keys[i]
+            x1 = keys[i + 1]
 
-        needed_digipot_vpp = requested_final_vpp / POST_DIGIPOT_GAIN
-        needed_digipot_vpp = _clamp(
-            needed_digipot_vpp,
-            0.0,
-            DIGIPOT_INPUT_MAX_VPP
-        )
+            if x0 <= amplitude_vpp <= x1:
+                y0 = AMP_CAL_TABLE[x0]
+                y1 = AMP_CAL_TABLE[x1]
 
-        step = round(
-            MAX_WIPER_STEP * (needed_digipot_vpp / DIGIPOT_INPUT_MAX_VPP)
-        )
-        return int(_clamp(step, 0, MAX_WIPER_STEP))
+                frac = (amplitude_vpp - x0) / (x1 - x0)
+                step = y0 + frac * (y1 - y0)
+                return int(round(step))
+
+        return AMP_CAL_TABLE[keys[0]]
 
     def _build_wave(self):
-        n_samples = self._get_samples()
-        lut = [math.sin(2 * math.pi * i / n_samples) for i in range(n_samples)]
+        N = self._get_samples()
+        lut = [math.sin(2 * math.pi * i / N) for i in range(N)]
 
         period_us = 1_000_000.0 / self._frequency
 
@@ -96,8 +115,8 @@ class SineWaveGenerator:
         acc = 0.0
         used = 0
 
-        for _ in range(n_samples):
-            acc += period_us / n_samples
+        for _ in range(N):
+            acc += period_us / N
             slot = int(round(acc - used))
             if slot < 1:
                 slot = 1
@@ -111,7 +130,7 @@ class SineWaveGenerator:
         if slot_list[-1] < 1:
             slot_list[-1] = 1
 
-        on_mask = 1 << PWM_GPIO
+        on_mask  = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
         pulses = []
 
@@ -119,7 +138,7 @@ class SineWaveGenerator:
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
             high_us = max(1, round(duty * slot_us))
-            low_us = max(1, slot_us - high_us)
+            low_us  = max(1, slot_us - high_us)
 
             pulses.append(pigpio.pulse(on_mask, 0, high_us))
             pulses.append(pigpio.pulse(0, off_mask, low_us))
@@ -143,14 +162,13 @@ class SineWaveGenerator:
             print(
                 f"[SineWave] req={self._frequency}Hz "
                 f"actual={actual_freq:.2f}Hz "
-                f"N={n_samples} period={actual_period}us "
-                f"pulses={len(pulses)} wave_id={wave_id}"
+                f"N={N} period={actual_period}us pulses={len(pulses)} wave_id={wave_id}"
             )
 
         return wave_id
 
     def _apply(self):
-        step = self._final_amp_to_digipot_step(self._final_amp_vpp)
+        step = self._amp_to_step(self._amp_v)
         self._write_wiper0(step)
 
         wave_id = self._build_wave()
@@ -162,15 +180,9 @@ class SineWaveGenerator:
         self._wave_id = wave_id
 
         if self._debug:
-            est_digipot_out = DIGIPOT_INPUT_MAX_VPP * (step / MAX_WIPER_STEP)
-            est_final_out = est_digipot_out * POST_DIGIPOT_GAIN
             print(
-                f"[SineWave] applied "
-                f"freq={self._frequency}Hz "
-                f"target_final={self._final_amp_vpp:.3f}Vpp "
-                f"step={step} "
-                f"est_digipot_out={est_digipot_out:.3f}Vpp "
-                f"est_final_out={est_final_out:.3f}Vpp"
+                f"[SineWave] applied freq={self._frequency}Hz "
+                f"amp={self._amp_v:.3f}Vpp step={step}"
             )
 
     def set_frequency(self, frequency):
@@ -184,16 +196,13 @@ class SineWaveGenerator:
             print(f"[SineWave] frequency -> {self._frequency} Hz")
 
     def set_amplitude(self, amplitude_vpp):
-        self._final_amp_vpp = self._snap_amplitude(amplitude_vpp)
+        self._amp_v = self._snap_amplitude(amplitude_vpp)
 
         if self._running:
             self._apply()
 
         if self._debug:
-            print(
-                f"[SineWave] final amplitude target -> "
-                f"{self._final_amp_vpp:.3f} Vpp"
-            )
+            print(f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp")
 
     def start(self):
         self._running = True
@@ -229,7 +238,7 @@ class SineWaveGenerator:
 
     @property
     def amplitude(self):
-        return self._final_amp_vpp
+        return self._amp_v
 
 
 if __name__ == "__main__":
@@ -241,8 +250,8 @@ if __name__ == "__main__":
 
     gen = SineWaveGenerator(pi, debug=True)
 
-    gen.set_frequency(1000)
-    gen.set_amplitude(10.0)
+    gen.set_frequency(5000)
+    gen.set_amplitude(2.5)
     gen.start()
 
     try:
