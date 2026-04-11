@@ -9,8 +9,8 @@ FREQ_STEP = 500
 
 GAIN      = 3
 VREF      = 3.3
-MAX_AMP   = VREF * GAIN
-AMP_STEP  = 0.5
+MAX_AMP   = 10.0
+AMP_STEP  = 0.625
 
 SPI_CHANNEL = 0
 SPI_BAUD    = 1_000_000
@@ -18,29 +18,26 @@ SPI_BAUD    = 1_000_000
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
-# Replace these with your measured calibration points.
-# Format: requested Vpp -> digipot step
+# Requested Vpp -> digipot step
+# Replace these with your measured calibration values.
 AMP_CAL_TABLE = {
-    0.0: 0,
-    0.5: 6,
-    1.0: 13,
-    1.5: 19,
-    2.0: 26,
-    2.5: 32,
-    3.0: 39,
-    3.5: 45,
-    4.0: 52,
-    4.5: 58,
-    5.0: 65,
-    5.5: 72,
-    6.0: 79,
-    6.5: 86,
-    7.0: 93,
-    7.5: 100,
-    8.0: 107,
-    8.5: 114,
-    9.0: 121,
-    9.5: 127,
+    0.000: 127,
+    0.625: 119,
+    1.250: 111,
+    1.875: 103,
+    2.500: 95,
+    3.125: 87,
+    3.750: 79,
+    4.375: 71,
+    5.000: 63,
+    5.625: 55,
+    6.250: 47,
+    6.875: 39,
+    7.500: 31,
+    8.125: 23,
+    8.750: 15,
+    9.375: 7,
+    10.000: 0,
 }
 
 
@@ -64,12 +61,8 @@ class SineWaveGenerator:
         pi.write(PWM_GPIO, 0)
 
     def _get_samples(self):
-        if self._frequency <= 2000:
-            return 64
-        elif self._frequency <= 5000:
-            return 32
-        else:
-            return 16
+        # Keep the sample count fixed so the waveform shape is more consistent.
+        return 64
 
     def _write_wiper0(self, step):
         step = int(_clamp(step, 0, 127))
@@ -78,9 +71,12 @@ class SineWaveGenerator:
         if self._debug:
             print(f"[Digipot] Wiper 0 -> step {step}")
 
-    def _amp_to_step(self, amplitude_vpp):
-        amplitude_vpp = _clamp(float(amplitude_vpp), 0.0, max(AMP_CAL_TABLE.keys()))
+    def _snap_amplitude(self, amplitude_vpp):
+        snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
+        return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
+    def _amp_to_step(self, amplitude_vpp):
+        amplitude_vpp = self._snap_amplitude(amplitude_vpp)
         keys = sorted(AMP_CAL_TABLE.keys())
 
         if amplitude_vpp <= keys[0]:
@@ -103,20 +99,42 @@ class SineWaveGenerator:
                 step = y0 + frac * (y1 - y0)
                 return int(round(step))
 
-        return 0
+        return AMP_CAL_TABLE[keys[0]]
 
     def _build_wave(self):
         N = self._get_samples()
         lut = [math.sin(2 * math.pi * i / N) for i in range(N)]
 
-        slot_us = max(2, round(1_000_000 / (self._frequency * N)))
+        # Total period in microseconds
+        period_us = 1_000_000.0 / self._frequency
+
+        # Build exact integer slot widths that sum to one full period
+        slot_list = []
+        acc = 0.0
+        used = 0
+
+        for i in range(N):
+            acc += period_us / N
+            slot = int(round(acc - used))
+            if slot < 1:
+                slot = 1
+            slot_list.append(slot)
+            used += slot
+
+        # Fix any rounding residue so the sum is exactly one period
+        target_total = int(round(period_us))
+        error = target_total - sum(slot_list)
+        slot_list[-1] += error
+
+        if slot_list[-1] < 1:
+            slot_list[-1] = 1
 
         on_mask  = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
         pulses = []
 
-        for sample in lut:
-            duty = _clamp(0.5 + self._amplitude * 0.5 * sample, 0.0, 1.0)
+        for sample, slot_us in zip(lut, slot_list):
+            duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
             high_us = max(1, round(duty * slot_us))
             low_us  = max(1, slot_us - high_us)
@@ -125,21 +143,31 @@ class SineWaveGenerator:
             pulses.append(pigpio.pulse(0, off_mask, low_us))
 
         self._pi.wave_tx_stop()
+
+        if self._wave_id is not None:
+            try:
+                self._pi.wave_delete(self._wave_id)
+            except pigpio.error:
+                pass
+            self._wave_id = None
+
         self._pi.wave_clear()
         self._pi.wave_add_generic(pulses)
         wave_id = self._pi.wave_create()
 
         if self._debug:
+            actual_period = sum(slot_list)
+            actual_freq = 1_000_000.0 / actual_period
             print(
-                f"[SineWave] freq={self._frequency}Hz "
-                f"N={N} slot={slot_us}us pulses={len(pulses)} wave_id={wave_id}"
+                f"[SineWave] req={self._frequency}Hz "
+                f"actual={actual_freq:.2f}Hz "
+                f"N={N} period={actual_period}us pulses={len(pulses)} wave_id={wave_id}"
             )
 
         return wave_id
 
     def _apply(self):
         step = self._amp_to_step(self._amp_v)
-        
         self._write_wiper0(step)
 
         wave_id = self._build_wave()
@@ -153,7 +181,7 @@ class SineWaveGenerator:
         if self._debug:
             print(
                 f"[SineWave] applied freq={self._frequency}Hz "
-                f"amp={self._amp_v:.2f}Vpp step={step}"
+                f"amp={self._amp_v:.3f}Vpp step={step}"
             )
 
     def set_frequency(self, frequency):
@@ -167,9 +195,9 @@ class SineWaveGenerator:
             print(f"[SineWave] frequency -> {self._frequency} Hz")
 
     def set_amplitude(self, amplitude_vpp):
-        self._amp_v = _clamp(float(amplitude_vpp), 0.0, max(AMP_CAL_TABLE.keys()))
+        self._amp_v = self._snap_amplitude(amplitude_vpp)
 
-        # Keep PWM depth full scale unless you intentionally want software amplitude shaping too.
+        # Keep PWM full scale and let the digipot control amplitude.
         self._amplitude = 1.0 if self._amp_v > 0 else 0.0
 
         if self._running:
@@ -177,7 +205,7 @@ class SineWaveGenerator:
 
         if self._debug:
             print(
-                f"[SineWave] amplitude -> {self._amp_v:.2f} Vpp "
+                f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp "
                 f"(PWM fraction={self._amplitude:.3f})"
             )
 
@@ -191,10 +219,16 @@ class SineWaveGenerator:
     def stop(self):
         self._pi.wave_tx_stop()
         self._pi.write(PWM_GPIO, 0)
-        self._pi.wave_clear()
 
+        if self._wave_id is not None:
+            try:
+                self._pi.wave_delete(self._wave_id)
+            except pigpio.error:
+                pass
+            self._wave_id = None
+
+        self._pi.wave_clear()
         self._running = False
-        self._wave_id = None
 
         if self._debug:
             print("[SineWave] stopped")
