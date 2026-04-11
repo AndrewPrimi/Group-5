@@ -16,14 +16,6 @@ SPI_BAUD    = 1_000_000
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
-# A = PWM signal
-# B = ground
-# W = output
-#
-# This mapping assumes:
-# - max signal into digipot is about 2.5 Vpp
-# - post-digipot gain is about 4
-# so full-scale wiper gives about 10 Vpp final output
 AMP_CAL_TABLE = {
     0.000: 0,
     0.625: 8,
@@ -64,9 +56,23 @@ class SineWaveGenerator:
         pi.write(PWM_GPIO, 0)
 
     def _get_samples(self):
-        # Increased from 64 to 128 so the stepped/PWM content is pushed higher
-        # in frequency and is easier to filter out with the analog RC stages.
-        return 128
+        """
+        Adaptive sample count so high frequencies still work.
+
+        1 kHz   -> 64 samples
+        2-3 kHz -> 48 samples
+        4-6 kHz -> 32 samples
+        7-10 kHz -> 16 samples
+        """
+        f = self._frequency
+
+        if f <= 1000:
+            return 64
+        if f <= 3000:
+            return 48
+        if f <= 6000:
+            return 32
+        return 16
 
     def _write_wiper0(self, step):
         step = int(_clamp(step, 0, 127))
@@ -247,7 +253,7 @@ if __name__ == "__main__":
 
     gen = SineWaveGenerator(pi, debug=True)
 
-    gen.set_frequency(5000)
+    gen.set_frequency(2500)
     gen.set_amplitude(5.0)
     gen.start()
 
