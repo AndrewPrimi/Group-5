@@ -7,11 +7,11 @@ MIN_FREQ = 1000
 MAX_FREQ = 10_000
 FREQ_STEP = 500
 
-MAX_AMP  = 10.0
+MAX_AMP = 10.0
 AMP_STEP = 0.625
 
 SPI_CHANNEL = 0
-SPI_BAUD    = 1_000_000
+SPI_BAUD = 1_000_000
 
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
@@ -43,12 +43,12 @@ def _clamp(value, lo, hi):
 
 class SineWaveGenerator:
     def __init__(self, pi, debug=False):
-        self._pi        = pi
+        self._pi = pi
         self._frequency = MIN_FREQ
-        self._amp_v     = 0.0
-        self._running   = False
-        self._wave_id   = None
-        self._debug     = debug
+        self._amp_v = 0.0
+        self._running = False
+        self._wave_id = None
+        self._debug = debug
 
         self._spi = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
@@ -57,22 +57,16 @@ class SineWaveGenerator:
 
     def _get_samples(self):
         """
-        Adaptive sample count so high frequencies still work.
-
-        1 kHz   -> 64 samples
-        2-3 kHz -> 48 samples
-        4-6 kHz -> 32 samples
-        7-10 kHz -> 16 samples
+        Use fewer samples as frequency rises so pulse widths do not get too small.
         """
         f = self._frequency
-
-        if f <= 1000:
-            return 64
-        if f <= 3000:
+        if f <= 1500:
             return 48
-        if f <= 6000:
+        if f <= 3000:
             return 32
-        return 16
+        if f <= 6000:
+            return 16
+        return 8
 
     def _write_wiper0(self, step):
         step = int(_clamp(step, 0, 127))
@@ -97,11 +91,9 @@ class SineWaveGenerator:
         for i in range(len(keys) - 1):
             x0 = keys[i]
             x1 = keys[i + 1]
-
             if x0 <= amplitude_vpp <= x1:
                 y0 = AMP_CAL_TABLE[x0]
                 y1 = AMP_CAL_TABLE[x1]
-
                 frac = (amplitude_vpp - x0) / (x1 - x0)
                 step = y0 + frac * (y1 - y0)
                 return int(round(step))
@@ -109,8 +101,8 @@ class SineWaveGenerator:
         return AMP_CAL_TABLE[keys[0]]
 
     def _build_wave(self):
-        N = self._get_samples()
-        lut = [math.sin(2 * math.pi * i / N) for i in range(N)]
+        n = self._get_samples()
+        lut = [math.sin(2 * math.pi * i / n) for i in range(n)]
 
         period_us = 1_000_000.0 / self._frequency
 
@@ -118,8 +110,8 @@ class SineWaveGenerator:
         acc = 0.0
         used = 0
 
-        for _ in range(N):
-            acc += period_us / N
+        for _ in range(n):
+            acc += period_us / n
             slot = int(round(acc - used))
             if slot < 1:
                 slot = 1
@@ -133,18 +125,22 @@ class SineWaveGenerator:
         if slot_list[-1] < 1:
             slot_list[-1] = 1
 
-        on_mask  = 1 << PWM_GPIO
+        on_mask = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
         pulses = []
 
         for sample, slot_us in zip(lut, slot_list):
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
-            high_us = max(1, round(duty * slot_us))
-            low_us  = max(1, slot_us - high_us)
+            high_us = int(round(duty * slot_us))
+            low_us = slot_us - high_us
 
-            pulses.append(pigpio.pulse(on_mask, 0, high_us))
-            pulses.append(pigpio.pulse(0, off_mask, low_us))
+            # Do NOT force both pulses to exist.
+            # Tiny forced 1 us pulses were creating spike artifacts.
+            if high_us > 0:
+                pulses.append(pigpio.pulse(on_mask, 0, high_us))
+            if low_us > 0:
+                pulses.append(pigpio.pulse(0, off_mask, low_us))
 
         self._pi.wave_tx_stop()
 
@@ -165,7 +161,7 @@ class SineWaveGenerator:
             print(
                 f"[SineWave] req={self._frequency}Hz "
                 f"actual={actual_freq:.2f}Hz "
-                f"N={N} period={actual_period}us pulses={len(pulses)} wave_id={wave_id}"
+                f"N={n} period={actual_period}us pulses={len(pulses)} wave_id={wave_id}"
             )
 
         return wave_id
@@ -253,7 +249,7 @@ if __name__ == "__main__":
 
     gen = SineWaveGenerator(pi, debug=True)
 
-    gen.set_frequency(2500)
+    gen.set_frequency(6000)
     gen.set_amplitude(5.0)
     gen.start()
 
