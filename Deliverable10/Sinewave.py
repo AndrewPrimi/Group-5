@@ -7,10 +7,8 @@ MIN_FREQ = 1000
 MAX_FREQ = 10_000
 FREQ_STEP = 500
 
-GAIN      = 3
-VREF      = 3.3
-MAX_AMP   = 10.0
-AMP_STEP  = 0.625
+MAX_AMP  = 10.0
+AMP_STEP = 0.625
 
 SPI_CHANNEL = 0
 SPI_BAUD    = 1_000_000
@@ -18,8 +16,14 @@ SPI_BAUD    = 1_000_000
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
-# Requested Vpp -> digipot step
-# Replace these with your measured calibration values.
+# A = PWM signal
+# B = ground
+# W = output
+#
+# With this wiring, larger desired amplitude should move the wiper
+# closer to A, so the step mapping is reversed from the earlier version.
+#
+# Replace these calibration values with measured ones from your scope.
 AMP_CAL_TABLE = {
     0.000: 127,
     0.625: 119,
@@ -49,7 +53,6 @@ class SineWaveGenerator:
     def __init__(self, pi, debug=False):
         self._pi        = pi
         self._frequency = MIN_FREQ
-        self._amplitude = 0.0
         self._amp_v     = 0.0
         self._running   = False
         self._wave_id   = None
@@ -61,7 +64,7 @@ class SineWaveGenerator:
         pi.write(PWM_GPIO, 0)
 
     def _get_samples(self):
-        # Keep the sample count fixed so the waveform shape is more consistent.
+        # Keep this fixed so waveform shape stays more consistent.
         return 64
 
     def _write_wiper0(self, step):
@@ -92,9 +95,6 @@ class SineWaveGenerator:
                 y0 = AMP_CAL_TABLE[x0]
                 y1 = AMP_CAL_TABLE[x1]
 
-                if x1 == x0:
-                    return int(y0)
-
                 frac = (amplitude_vpp - x0) / (x1 - x0)
                 step = y0 + frac * (y1 - y0)
                 return int(round(step))
@@ -105,15 +105,13 @@ class SineWaveGenerator:
         N = self._get_samples()
         lut = [math.sin(2 * math.pi * i / N) for i in range(N)]
 
-        # Total period in microseconds
         period_us = 1_000_000.0 / self._frequency
 
-        # Build exact integer slot widths that sum to one full period
         slot_list = []
         acc = 0.0
         used = 0
 
-        for i in range(N):
+        for _ in range(N):
             acc += period_us / N
             slot = int(round(acc - used))
             if slot < 1:
@@ -121,7 +119,6 @@ class SineWaveGenerator:
             slot_list.append(slot)
             used += slot
 
-        # Fix any rounding residue so the sum is exactly one period
         target_total = int(round(period_us))
         error = target_total - sum(slot_list)
         slot_list[-1] += error
@@ -133,6 +130,8 @@ class SineWaveGenerator:
         off_mask = 1 << PWM_GPIO
         pulses = []
 
+        # Full-scale PWM waveform.
+        # Let the digipot control amplitude in hardware.
         for sample, slot_us in zip(lut, slot_list):
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
@@ -197,17 +196,11 @@ class SineWaveGenerator:
     def set_amplitude(self, amplitude_vpp):
         self._amp_v = self._snap_amplitude(amplitude_vpp)
 
-        # Keep PWM full scale and let the digipot control amplitude.
-        self._amplitude = 1.0 if self._amp_v > 0 else 0.0
-
         if self._running:
             self._apply()
 
         if self._debug:
-            print(
-                f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp "
-                f"(PWM fraction={self._amplitude:.3f})"
-            )
+            print(f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp")
 
     def start(self):
         self._running = True
