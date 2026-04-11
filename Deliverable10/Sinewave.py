@@ -1,7 +1,7 @@
 import math
 import pigpio
 
-PWM_GPIO = 12
+PWM_GPIO = 26
 
 MIN_FREQ = 1000
 MAX_FREQ = 10_000
@@ -56,9 +56,6 @@ class SineWaveGenerator:
         pi.write(PWM_GPIO, 0)
 
     def _get_samples(self):
-        """
-        Use fewer samples as frequency rises so pulse widths do not get too small.
-        """
         f = self._frequency
         if f <= 1500:
             return 48
@@ -135,8 +132,6 @@ class SineWaveGenerator:
             high_us = int(round(duty * slot_us))
             low_us = slot_us - high_us
 
-            # Do NOT force both pulses to exist.
-            # Tiny forced 1 us pulses were creating spike artifacts.
             if high_us > 0:
                 pulses.append(pigpio.pulse(on_mask, 0, high_us))
             if low_us > 0:
@@ -249,7 +244,7 @@ if __name__ == "__main__":
 
     gen = SineWaveGenerator(pi, debug=True)
 
-    gen.set_frequency(6000)
+    gen.set_frequency(2500)
     gen.set_amplitude(5.0)
     gen.start()
 
