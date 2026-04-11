@@ -20,27 +20,25 @@ CMD_WRITE_WIPER1 = 0x10
 # B = ground
 # W = output
 #
-# With this wiring, larger desired amplitude should move the wiper
-# closer to A, so the step mapping is reversed from the earlier version.
-#
-# Replace these calibration values with measured ones from your scope.
+# This table is now changed back so that larger requested amplitude
+# maps to larger step values.
 AMP_CAL_TABLE = {
-    0.000: 127,
-    0.625: 119,
-    1.250: 111,
-    1.875: 103,
-    2.500: 95,
-    3.125: 87,
-    3.750: 79,
-    4.375: 71,
-    5.000: 63,
-    5.625: 55,
-    6.250: 47,
-    6.875: 39,
-    7.500: 31,
-    8.125: 23,
-    8.750: 15,
-    9.375: 7,
+    0.000: 0,
+    0.625: 8,
+    1.250: 16,
+    1.875: 24,
+    2.500: 32,
+    3.125: 40,
+    3.750: 48,
+    4.375: 56,
+    5.000: 64,
+    5.625: 72,
+    6.250: 80,
+    6.875: 88,
+    7.500: 96,
+    8.125: 104,
+    8.750: 112,
+    9.375: 120,
     10.000: 127,
 }
 
@@ -64,7 +62,6 @@ class SineWaveGenerator:
         pi.write(PWM_GPIO, 0)
 
     def _get_samples(self):
-        # Keep this fixed so waveform shape stays more consistent.
         return 64
 
     def _write_wiper0(self, step):
@@ -130,8 +127,6 @@ class SineWaveGenerator:
         off_mask = 1 << PWM_GPIO
         pulses = []
 
-        # Full-scale PWM waveform.
-        # Let the digipot control amplitude in hardware.
         for sample, slot_us in zip(lut, slot_list):
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
