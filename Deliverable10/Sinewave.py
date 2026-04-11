@@ -7,19 +7,28 @@ MIN_FREQ = 1000
 MAX_FREQ = 10_000
 FREQ_STEP = 500
 
-# Actual maximum Vpp measured BEFORE the digipot.
-# Since the digipot is being used as an attenuator, this is also the
-# maximum output Vpp you can get directly from the digipot.
-MAX_AMP = 2.5
+# Project requirement for the sine generator:
+# positive-only, 0-10V variable amplitude in 0.625V steps.
+# We will keep the software/UI range at 0-10 Vpp final output target.
+FINAL_MAX_AMP = 10.0
 AMP_STEP = 0.625
 
 SPI_CHANNEL = 0
-SPI_BAUD    = 1_000_000
+SPI_BAUD = 1_000_000
 
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
 MAX_WIPER_STEP = 127
+
+# Measured/assumed max signal magnitude at the digipot input.
+# From your scope work, this is around 2.5 Vpp.
+DIGIPOT_INPUT_MAX_VPP = 2.5
+
+# Analog gain AFTER the digipot.
+# Change this to match your real hardware once measured.
+# Example: 2.5 Vpp from digipot * 4.0 gain = 10 Vpp final output.
+POST_DIGIPOT_GAIN = 4.0
 
 
 def _clamp(value, lo, hi):
@@ -28,12 +37,12 @@ def _clamp(value, lo, hi):
 
 class SineWaveGenerator:
     def __init__(self, pi, debug=False):
-        self._pi        = pi
+        self._pi = pi
         self._frequency = MIN_FREQ
-        self._amp_v     = 0.0
-        self._running   = False
-        self._wave_id   = None
-        self._debug     = debug
+        self._final_amp_vpp = 0.0
+        self._running = False
+        self._wave_id = None
+        self._debug = debug
 
         self._spi = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
@@ -52,27 +61,31 @@ class SineWaveGenerator:
 
     def _snap_amplitude(self, amplitude_vpp):
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
-        return _clamp(round(snapped, 3), 0.0, MAX_AMP)
+        return _clamp(round(snapped, 3), 0.0, FINAL_MAX_AMP)
 
-    def _amp_to_step(self, amplitude_vpp):
+    def _final_amp_to_digipot_step(self, requested_final_vpp):
         """
-        Maps requested Vpp to digipot wiper step.
+        Convert desired FINAL output amplitude to the digipot step.
 
-        Hardware:
-          A = PWM signal
-          B = ground
-          W = output
+        Hardware assumption:
+          digipot output Vpp ~= DIGIPOT_INPUT_MAX_VPP * (step / 127)
 
-        So the digipot is acting like an attenuator.
-        If the input to the digipot is 2.5 Vpp max, then:
-          0.000 Vpp  -> step   0
-          0.625 Vpp  -> step  32
-          1.250 Vpp  -> step  64
-          1.875 Vpp  -> step  95
-          2.500 Vpp  -> step 127
+        Final output assumption:
+          final Vpp ~= digipot_output_vpp * POST_DIGIPOT_GAIN
+
+        Therefore:
+          digipot_output_vpp = requested_final_vpp / POST_DIGIPOT_GAIN
+          step ~= 127 * digipot_output_vpp / DIGIPOT_INPUT_MAX_VPP
         """
-        amplitude_vpp = self._snap_amplitude(amplitude_vpp)
-        step = round((amplitude_vpp / MAX_AMP) * MAX_WIPER_STEP)
+        requested_final_vpp = self._snap_amplitude(requested_final_vpp)
+
+        if POST_DIGIPOT_GAIN <= 0 or DIGIPOT_INPUT_MAX_VPP <= 0:
+            return 0
+
+        needed_digipot_vpp = requested_final_vpp / POST_DIGIPOT_GAIN
+        needed_digipot_vpp = _clamp(needed_digipot_vpp, 0.0, DIGIPOT_INPUT_MAX_VPP)
+
+        step = round(MAX_WIPER_STEP * (needed_digipot_vpp / DIGIPOT_INPUT_MAX_VPP))
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
@@ -100,7 +113,7 @@ class SineWaveGenerator:
         if slot_list[-1] < 1:
             slot_list[-1] = 1
 
-        on_mask  = 1 << PWM_GPIO
+        on_mask = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
         pulses = []
 
@@ -108,7 +121,7 @@ class SineWaveGenerator:
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
             high_us = max(1, round(duty * slot_us))
-            low_us  = max(1, slot_us - high_us)
+            low_us = max(1, slot_us - high_us)
 
             pulses.append(pigpio.pulse(on_mask, 0, high_us))
             pulses.append(pigpio.pulse(0, off_mask, low_us))
@@ -138,7 +151,7 @@ class SineWaveGenerator:
         return wave_id
 
     def _apply(self):
-        step = self._amp_to_step(self._amp_v)
+        step = self._final_amp_to_digipot_step(self._final_amp_vpp)
         self._write_wiper0(step)
 
         wave_id = self._build_wave()
@@ -150,11 +163,15 @@ class SineWaveGenerator:
         self._wave_id = wave_id
 
         if self._debug:
-            estimated_out = MAX_AMP * (step / MAX_WIPER_STEP)
+            est_digipot_out = DIGIPOT_INPUT_MAX_VPP * (step / MAX_WIPER_STEP)
+            est_final_out = est_digipot_out * POST_DIGIPOT_GAIN
             print(
-                f"[SineWave] applied freq={self._frequency}Hz "
-                f"amp={self._amp_v:.3f}Vpp step={step} "
-                f"estimated_digipot_out={estimated_out:.3f}Vpp"
+                f"[SineWave] applied "
+                f"freq={self._frequency}Hz "
+                f"target_final={self._final_amp_vpp:.3f}Vpp "
+                f"step={step} "
+                f"est_digipot_out={est_digipot_out:.3f}Vpp "
+                f"est_final_out={est_final_out:.3f}Vpp"
             )
 
     def set_frequency(self, frequency):
@@ -168,13 +185,16 @@ class SineWaveGenerator:
             print(f"[SineWave] frequency -> {self._frequency} Hz")
 
     def set_amplitude(self, amplitude_vpp):
-        self._amp_v = self._snap_amplitude(amplitude_vpp)
+        """
+        amplitude_vpp is the DESIRED FINAL OUTPUT amplitude, not the raw digipot output.
+        """
+        self._final_amp_vpp = self._snap_amplitude(amplitude_vpp)
 
         if self._running:
             self._apply()
 
         if self._debug:
-            print(f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp")
+            print(f"[SineWave] final amplitude target -> {self._final_amp_vpp:.3f} Vpp")
 
     def start(self):
         self._running = True
@@ -210,7 +230,7 @@ class SineWaveGenerator:
 
     @property
     def amplitude(self):
-        return self._amp_v
+        return self._final_amp_vpp
 
 
 if __name__ == "__main__":
@@ -223,7 +243,7 @@ if __name__ == "__main__":
     gen = SineWaveGenerator(pi, debug=True)
 
     gen.set_frequency(1000)
-    gen.set_amplitude(2.5)
+    gen.set_amplitude(10.0)
     gen.start()
 
     try:
