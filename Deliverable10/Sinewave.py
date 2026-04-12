@@ -1,7 +1,7 @@
 import math
 import pigpio
 
-PWM_GPIO = 26   # change to 12 if needed
+PWM_GPIO = 26   # change to 12 if your hardware is actually on GPIO 12
 
 MIN_FREQ = 1000
 MAX_FREQ = 10_000
@@ -16,47 +16,48 @@ SPI_BAUD = 1_000_000
 CMD_WRITE_WIPER0 = 0x00
 MAX_WIPER_STEP = 127
 
-# command amplitude -> actual measured amplitude
+# These tables are:
+# desired amplitude on LCD -> corrected command amplitude
 CAL_TABLES = {
     1000: {
-        0.625: 0.660,
-        1.250: 2.050,
-        2.500: 4.040,
-        5.000: 8.000,
-        7.500: 11.000,
-        10.000: 11.000,
+        0.625: 0.625,
+        1.250: 0.893,
+        2.500: 1.391,
+        5.000: 3.098,
+        7.500: 4.375,
+        10.000: 6.250,
     },
     2500: {
-        0.625: 0.820,
-        1.250: 1.810,
-        2.500: 3.470,
-        5.000: 7.020,
-        7.500: 10.000,
-        10.000: 10.100,
+        0.625: 0.625,
+        1.250: 0.899,
+        2.500: 1.780,
+        5.000: 3.571,
+        7.500: 5.403,
+        10.000: 7.500,
     },
     5000: {
-        0.625: 0.660,
-        1.250: 1.310,
-        2.500: 2.530,
-        5.000: 5.100,
-        7.500: 6.900,
-        10.000: 7.000,
+        0.625: 0.625,
+        1.250: 1.188,
+        2.500: 2.480,
+        5.000: 4.902,
+        7.500: 10.000,
+        10.000: 10.000,
     },
     7500: {
-        0.625: 0.540,
-        1.250: 1.050,
-        2.500: 2.010,
-        5.000: 3.900,
-        7.500: 5.200,
-        10.000: 5.300,
+        0.625: 0.723,
+        1.250: 1.562,
+        2.500: 3.281,
+        5.000: 7.019,
+        7.500: 10.000,
+        10.000: 10.000,
     },
     10000: {
-        0.625: 0.180,
-        1.250: 0.800,
-        2.500: 1.400,
-        5.000: 2.770,
-        7.500: 3.820,
-        10.000: 3.840,
+        0.625: 1.072,
+        1.250: 2.156,
+        2.500: 4.607,
+        5.000: 10.000,
+        7.500: 10.000,
+        10.000: 10.000,
     },
 }
 
@@ -132,69 +133,37 @@ class SineWaveGenerator:
 
         return freqs[-1], freqs[-1]
 
-    def _actual_from_cmd_at_freq(self, cmd_amp, freq):
-        """
-        For a given frequency table, interpolate:
-        command amplitude -> actual amplitude
-        """
+    def _corrected_cmd_at_freq(self, target_amp, freq):
         table = CAL_TABLES[freq]
-        cmds = sorted(table.keys())
-        actuals = [table[c] for c in cmds]
-        return _interp(cmd_amp, cmds, actuals)
+        targets = sorted(table.keys())
+        corrected = [table[t] for t in targets]
+        return _interp(target_amp, targets, corrected)
 
-    def _actual_from_cmd(self, cmd_amp, freq):
-        """
-        2D interpolation:
-        first interpolate in amplitude within each frequency table,
-        then interpolate between the two surrounding frequency tables.
-        """
-        f0, f1 = self._find_bracketing_freqs(freq)
+    def _target_to_corrected_cmd(self, target_amp):
+        f0, f1 = self._find_bracketing_freqs(self._frequency)
 
-        a0 = self._actual_from_cmd_at_freq(cmd_amp, f0)
-        a1 = self._actual_from_cmd_at_freq(cmd_amp, f1)
+        c0 = self._corrected_cmd_at_freq(target_amp, f0)
+        c1 = self._corrected_cmd_at_freq(target_amp, f1)
 
         if f0 == f1:
-            return a0
+            return c0
 
-        frac = (freq - f0) / (f1 - f0)
-        return a0 + frac * (a1 - a0)
+        frac = (self._frequency - f0) / (f1 - f0)
+        return c0 + frac * (c1 - c0)
 
-    def _command_for_target(self, target_actual):
-        """
-        Invert the calibration numerically by searching command amplitudes
-        from 0 to 10 V and choosing the one that best matches the target.
-        """
-        best_cmd = 0.0
-        best_err = float("inf")
-
-        cmd = 0.0
-        while cmd <= MAX_AMP + 1e-9:
-            predicted = self._actual_from_cmd(cmd, self._frequency)
-            err = abs(predicted - target_actual)
-
-            if err < best_err:
-                best_err = err
-                best_cmd = cmd
-
-            cmd += AMP_STEP / 4.0  # fine search step
-
-        return _clamp(best_cmd, 0.0, MAX_AMP)
-
-    def _amp_to_step(self, target_actual_vpp):
-        target_actual_vpp = self._snap_amplitude(target_actual_vpp)
-
-        needed_cmd = self._command_for_target(target_actual_vpp)
+    def _amp_to_step(self, target_amp):
+        target_amp = self._snap_amplitude(target_amp)
+        corrected_cmd = self._target_to_corrected_cmd(target_amp)
+        corrected_cmd = _clamp(corrected_cmd, 0.0, MAX_AMP)
 
         if self._debug:
-            predicted = self._actual_from_cmd(needed_cmd, self._frequency)
             print(
                 f"[Cal] freq={self._frequency}Hz "
-                f"target={target_actual_vpp:.3f}Vpp "
-                f"cmd≈{needed_cmd:.3f} "
-                f"predicted≈{predicted:.3f}Vpp"
+                f"target={target_amp:.3f}Vpp "
+                f"corrected_cmd={corrected_cmd:.3f}"
             )
 
-        step = round((needed_cmd / MAX_AMP) * MAX_WIPER_STEP)
+        step = round((corrected_cmd / MAX_AMP) * MAX_WIPER_STEP)
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
