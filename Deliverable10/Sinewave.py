@@ -1,7 +1,7 @@
 import math
 import pigpio
 
-PWM_GPIO = 12
+PWM_GPIO = 26
 
 MIN_FREQ = 1000
 MAX_FREQ = 10_000
