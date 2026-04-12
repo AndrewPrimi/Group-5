@@ -58,7 +58,33 @@ class SineWaveGenerator:
 
     def _amp_to_step(self, amplitude_vpp):
         amplitude_vpp = self._snap_amplitude(amplitude_vpp)
-        step = round((amplitude_vpp / MAX_AMP) * MAX_WIPER_STEP)
+
+        # Frequency-based correction factors based on your measured behavior.
+        # Lower factor = command the digipot less at that frequency.
+        f = self._frequency
+        if f <= 1000:
+            corr = 0.93
+        elif f <= 2500:
+            corr = 0.78
+        elif f <= 5000:
+            corr = 0.68
+        elif f <= 7500:
+            corr = 0.56
+        else:
+            corr = 1.00
+
+        corrected_amp = amplitude_vpp * corr
+        corrected_amp = _clamp(corrected_amp, 0.0, MAX_AMP)
+
+        if self._debug:
+            print(
+                f"[Cal] freq={self._frequency}Hz "
+                f"target={amplitude_vpp:.3f}Vpp "
+                f"corr={corr:.3f} "
+                f"corrected_amp={corrected_amp:.3f}Vpp"
+            )
+
+        step = round((corrected_amp / MAX_AMP) * MAX_WIPER_STEP)
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
