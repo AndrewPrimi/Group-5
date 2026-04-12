@@ -1,7 +1,7 @@
 import math
 import pigpio
 
-PWM_GPIO = 26   # change to 12 if your hardware is actually on GPIO 12
+PWM_GPIO = 26
 
 MIN_FREQ = 1000
 MAX_FREQ = 10_000
@@ -16,72 +16,9 @@ SPI_BAUD = 1_000_000
 CMD_WRITE_WIPER0 = 0x00
 MAX_WIPER_STEP = 127
 
-# These tables are:
-# desired amplitude on LCD -> corrected command amplitude
-CAL_TABLES = {
-    1000: {
-        0.625: 0.625,
-        1.250: 0.893,
-        2.500: 1.391,
-        5.000: 3.098,
-        7.500: 4.375,
-        10.000: 6.250,
-    },
-    2500: {
-        0.625: 0.625,
-        1.250: 0.899,
-        2.500: 1.780,
-        5.000: 3.571,
-        7.500: 5.403,
-        10.000: 7.500,
-    },
-    5000: {
-        0.625: 0.625,
-        1.250: 1.188,
-        2.500: 2.480,
-        5.000: 4.902,
-        7.500: 10.000,
-        10.000: 10.000,
-    },
-    7500: {
-        0.625: 0.723,
-        1.250: 1.562,
-        2.500: 3.281,
-        5.000: 7.019,
-        7.500: 10.000,
-        10.000: 10.000,
-    },
-    10000: {
-        0.625: 1.072,
-        1.250: 2.156,
-        2.500: 4.607,
-        5.000: 10.000,
-        7.500: 10.000,
-        10.000: 10.000,
-    },
-}
-
 
 def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
-
-
-def _interp(x, xp, fp):
-    if x <= xp[0]:
-        return fp[0]
-    if x >= xp[-1]:
-        return fp[-1]
-
-    for i in range(1, len(xp)):
-        if x <= xp[i]:
-            x0, x1 = xp[i - 1], xp[i]
-            y0, y1 = fp[i - 1], fp[i]
-            if x1 == x0:
-                return y0
-            frac = (x - x0) / (x1 - x0)
-            return y0 + frac * (y1 - y0)
-
-    return fp[-1]
 
 
 class SineWaveGenerator:
@@ -119,51 +56,9 @@ class SineWaveGenerator:
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
         return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
-    def _find_bracketing_freqs(self, freq):
-        freqs = sorted(CAL_TABLES.keys())
-
-        if freq <= freqs[0]:
-            return freqs[0], freqs[0]
-        if freq >= freqs[-1]:
-            return freqs[-1], freqs[-1]
-
-        for i in range(1, len(freqs)):
-            if freq <= freqs[i]:
-                return freqs[i - 1], freqs[i]
-
-        return freqs[-1], freqs[-1]
-
-    def _corrected_cmd_at_freq(self, target_amp, freq):
-        table = CAL_TABLES[freq]
-        targets = sorted(table.keys())
-        corrected = [table[t] for t in targets]
-        return _interp(target_amp, targets, corrected)
-
-    def _target_to_corrected_cmd(self, target_amp):
-        f0, f1 = self._find_bracketing_freqs(self._frequency)
-
-        c0 = self._corrected_cmd_at_freq(target_amp, f0)
-        c1 = self._corrected_cmd_at_freq(target_amp, f1)
-
-        if f0 == f1:
-            return c0
-
-        frac = (self._frequency - f0) / (f1 - f0)
-        return c0 + frac * (c1 - c0)
-
-    def _amp_to_step(self, target_amp):
-        target_amp = self._snap_amplitude(target_amp)
-        corrected_cmd = self._target_to_corrected_cmd(target_amp)
-        corrected_cmd = _clamp(corrected_cmd, 0.0, MAX_AMP)
-
-        if self._debug:
-            print(
-                f"[Cal] freq={self._frequency}Hz "
-                f"target={target_amp:.3f}Vpp "
-                f"corrected_cmd={corrected_cmd:.3f}"
-            )
-
-        step = round((corrected_cmd / MAX_AMP) * MAX_WIPER_STEP)
+    def _amp_to_step(self, amplitude_vpp):
+        amplitude_vpp = self._snap_amplitude(amplitude_vpp)
+        step = round((amplitude_vpp / MAX_AMP) * MAX_WIPER_STEP)
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
@@ -245,7 +140,7 @@ class SineWaveGenerator:
         if self._debug:
             print(
                 f"[SineWave] applied freq={self._frequency}Hz "
-                f"target_amp={self._amp_v:.3f}Vpp step={step}"
+                f"amp={self._amp_v:.3f}Vpp step={step}"
             )
 
     def set_frequency(self, frequency):
@@ -265,7 +160,7 @@ class SineWaveGenerator:
             self._apply()
 
         if self._debug:
-            print(f"[SineWave] amplitude target -> {self._amp_v:.3f} Vpp")
+            print(f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp")
 
     def start(self):
         self._running = True
