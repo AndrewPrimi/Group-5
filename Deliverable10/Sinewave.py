@@ -1,47 +1,67 @@
 import math
 import pigpio
 
-PWM_GPIO = 26
+PWM_GPIO = 26   # change to 12 if your hardware is actually on GPIO 12
 
 MIN_FREQ = 1000
 MAX_FREQ = 10_000
 FREQ_STEP = 500
 
-MAX_AMP  = 10.0
+MAX_AMP = 10.0
 AMP_STEP = 0.625
 
 SPI_CHANNEL = 0
-SPI_BAUD    = 1_000_000
+SPI_BAUD = 1_000_000
 
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
+MAX_WIPER_STEP = 127
 
-# Measured data you provided:
-# (LCD request Vpp, actual measured output Vpp)
-#
-# This is used to invert the calibration so that when you request
-# a target amplitude, the software picks the command value that most
-# closely produces it on your current hardware.
-MEASURED_POINTS = [
-    (0.00, 0.00),
-    (0.62, 0.68),
-    (1.25, 1.05),
-    (1.88, 1.45),
-    (2.50, 1.85),
-    (3.12, 2.25),
-    (3.75, 2.65),
-    (4.38, 3.10),
-    (5.00, 3.50),
-    (5.62, 3.90),
-    (6.50, 4.22),
-    (6.80, 4.74),
-    (7.50, 5.11),
-    (8.12, 5.39),
-    (8.75, 5.87),
-    (9.38, 6.09),
-    (10.00, 6.50),
-]
+# Measured calibration data:
+# command amplitude on LCD -> actual measured amplitude
+CAL_TABLES = {
+    1000: {
+        0.625: 0.660,
+        1.250: 2.050,
+        2.500: 4.040,
+        5.000: 8.000,
+        7.500: 11.000,
+        10.000: 11.000,
+    },
+    2500: {
+        0.625: 0.820,
+        1.250: 1.810,
+        2.500: 3.470,
+        5.000: 7.020,
+        7.500: 10.000,
+        10.000: 10.100,
+    },
+    5000: {
+        0.625: 0.660,
+        1.250: 1.310,
+        2.500: 2.530,
+        5.000: 5.100,
+        7.500: 6.900,
+        10.000: 7.000,
+    },
+    7500: {
+        0.625: 0.540,
+        1.250: 1.050,
+        2.500: 2.010,
+        5.000: 3.900,
+        7.500: 5.200,
+        10.000: 5.300,
+    },
+    10000: {
+        0.625: 0.180,
+        1.250: 0.800,
+        2.500: 1.400,
+        5.000: 2.770,
+        7.500: 3.820,
+        10.000: 3.840,
+    },
+}
 
 
 def _clamp(value, lo, hi):
@@ -50,7 +70,7 @@ def _clamp(value, lo, hi):
 
 def _interp(x, xp, fp):
     """
-    Simple linear interpolation.
+    Linear interpolation.
     xp must be sorted ascending.
     """
     if x <= xp[0]:
@@ -72,22 +92,17 @@ def _interp(x, xp, fp):
 
 class SineWaveGenerator:
     def __init__(self, pi, debug=False):
-        self._pi        = pi
+        self._pi = pi
         self._frequency = MIN_FREQ
-        self._amp_v     = 0.0
-        self._running   = False
-        self._wave_id   = None
-        self._debug     = debug
+        self._amp_v = 0.0
+        self._running = False
+        self._wave_id = None
+        self._debug = debug
 
         self._spi = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
         pi.set_mode(PWM_GPIO, pigpio.OUTPUT)
         pi.write(PWM_GPIO, 0)
-
-        # Build inverse calibration:
-        # desired actual output -> needed LCD-equivalent command
-        self._measured_cmds   = [p[0] for p in MEASURED_POINTS]
-        self._measured_actual = [p[1] for p in MEASURED_POINTS]
 
     def _get_samples(self):
         f = self._frequency
@@ -100,7 +115,7 @@ class SineWaveGenerator:
         return 8
 
     def _write_wiper0(self, step):
-        step = int(_clamp(step, 0, 127))
+        step = int(_clamp(step, 0, MAX_WIPER_STEP))
         self._pi.spi_write(self._spi, bytes([CMD_WRITE_WIPER0, step]))
 
         if self._debug:
@@ -110,42 +125,46 @@ class SineWaveGenerator:
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
         return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
-    def _amp_to_step(self, desired_actual_vpp):
+    def _get_calibration_for_freq(self, freq_hz):
         """
-        Convert desired ACTUAL output amplitude to digipot step using your
-        measured calibration data.
-
-        Your measured data only reaches about 6.5 Vpp actual at a command
-        of 10.0 Vpp, so requests above that will clamp to full scale.
+        Pick the nearest measured calibration frequency.
         """
-        desired_actual_vpp = self._snap_amplitude(desired_actual_vpp)
+        choices = sorted(CAL_TABLES.keys())
+        nearest = min(choices, key=lambda f: abs(f - freq_hz))
+        return nearest, CAL_TABLES[nearest]
 
-        # Invert the measured curve:
-        # desired actual output -> command value that should produce it
-        needed_cmd = _interp(
-            desired_actual_vpp,
-            self._measured_actual,
-            self._measured_cmds
-        )
+    def _target_to_command(self, target_actual_vpp):
+        """
+        Convert desired ACTUAL output amplitude to the LCD command amplitude,
+        using the nearest frequency calibration table.
+        """
+        cal_freq, table = self._get_calibration_for_freq(self._frequency)
 
-        # Convert the command scale 0..10 to step scale 0..127
-        step = round((needed_cmd / 10.0) * 127.0)
-        step = int(_clamp(step, 0, 127))
+        cmds = sorted(table.keys())
+        actuals = [table[c] for c in cmds]
+
+        # actual output -> needed command
+        needed_cmd = _interp(target_actual_vpp, actuals, cmds)
 
         if self._debug:
-            max_actual = self._measured_actual[-1]
-            if desired_actual_vpp > max_actual:
-                print(
-                    f"[Cal] requested {desired_actual_vpp:.3f} Vpp, "
-                    f"but measured hardware max is about {max_actual:.3f} Vpp. "
-                    f"Clamping to full scale."
-                )
+            max_actual = max(actuals)
+            clamped = ""
+            if target_actual_vpp > max_actual:
+                clamped = " [CLAMPED TO HARDWARE MAX]"
             print(
-                f"[Cal] target_actual={desired_actual_vpp:.3f} Vpp "
-                f"-> cmd≈{needed_cmd:.3f} -> step={step}"
+                f"[Cal] freq={self._frequency}Hz using {cal_freq}Hz table | "
+                f"target={target_actual_vpp:.3f}Vpp -> cmd={needed_cmd:.3f}{clamped}"
             )
 
-        return step
+        return _clamp(needed_cmd, 0.0, MAX_AMP)
+
+    def _amp_to_step(self, target_actual_vpp):
+        target_actual_vpp = self._snap_amplitude(target_actual_vpp)
+        needed_cmd = self._target_to_command(target_actual_vpp)
+
+        # Convert 0..10 command scale to 0..127 digipot step
+        step = round((needed_cmd / MAX_AMP) * MAX_WIPER_STEP)
+        return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
         n = self._get_samples()
@@ -172,7 +191,7 @@ class SineWaveGenerator:
         if slot_list[-1] < 1:
             slot_list[-1] = 1
 
-        on_mask  = 1 << PWM_GPIO
+        on_mask = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
         pulses = []
 
@@ -180,7 +199,7 @@ class SineWaveGenerator:
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
             high_us = int(round(duty * slot_us))
-            low_us  = slot_us - high_us
+            low_us = slot_us - high_us
 
             if high_us > 0:
                 pulses.append(pigpio.pulse(on_mask, 0, high_us))
