@@ -16,9 +16,72 @@ SPI_BAUD = 1_000_000
 CMD_WRITE_WIPER0 = 0x00
 MAX_WIPER_STEP = 127
 
+# These tables are:
+# desired output amplitude -> corrected command amplitude
+CAL_TABLES = {
+    1000: {
+        0.625: 0.355,
+        1.250: 0.733,
+        2.500: 1.563,
+        5.000: 3.289,
+        7.500: 4.891,
+        10.000: 7.143,
+    },
+    2500: {
+        0.625: 0.275,
+        1.250: 0.581,
+        2.500: 1.330,
+        5.000: 2.778,
+        7.500: 4.046,
+        10.000: 6.410,
+    },
+    5000: {
+        0.625: 0.349,
+        1.250: 0.710,
+        2.500: 1.563,
+        5.000: 3.125,
+        7.500: 4.808,
+        10.000: 6.944,
+    },
+    7500: {
+        0.625: 0.407,
+        1.250: 0.919,
+        2.500: 1.953,
+        5.000: 4.032,
+        7.500: 6.048,
+        10.000: 8.333,
+    },
+    10000: {
+        0.625: 0.528,
+        1.250: 1.250,
+        2.500: 2.778,
+        5.000: 5.556,
+        7.500: 8.523,
+        10.000: 10.000,
+    },
+}
+
 
 def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
+
+
+def _interp(x, xp, fp):
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+
+    for i in range(1, len(xp)):
+        if x <= xp[i]:
+            x0, x1 = xp[i - 1], xp[i]
+            y0, y1 = fp[i - 1], fp[i]
+            if x1 == x0:
+                return y0
+            frac = (x - x0) / (x1 - x0)
+            return y0 + frac * (y1 - y0)
+
+    return fp[-1]
 
 
 class SineWaveGenerator:
@@ -56,39 +119,51 @@ class SineWaveGenerator:
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
         return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
-    def _freq_correction(self):
-        """
-        Exponential correction based on your measured behavior.
+    def _find_bracketing_freqs(self, freq):
+        freqs = sorted(CAL_TABLES.keys())
 
-        For a 5 Vpp target:
-          1 kHz  -> actual ~12.3 Vpp  => correction ~ 5/12.3 = 0.4065
-          10 kHz -> actual ~ 6.0 Vpp  => correction ~ 5/6.0  = 0.8333
+        if freq <= freqs[0]:
+            return freqs[0], freqs[0]
+        if freq >= freqs[-1]:
+            return freqs[-1], freqs[-1]
 
-        Fit used:
-            corr(f) = 0.4065 * (f / 1000)^0.312
-        """
-        f = float(self._frequency)
-        corr = 0.4065 * ((f / 1000.0) ** 0.312)
+        for i in range(1, len(freqs)):
+            if freq <= freqs[i]:
+                return freqs[i - 1], freqs[i]
 
-        # Keep it sane
-        return _clamp(corr, 0.25, 1.00)
+        return freqs[-1], freqs[-1]
 
-    def _amp_to_step(self, amplitude_vpp):
-        amplitude_vpp = self._snap_amplitude(amplitude_vpp)
+    def _corrected_cmd_at_freq(self, target_amp, freq):
+        table = CAL_TABLES[freq]
+        targets = sorted(table.keys())
+        corrected = [table[t] for t in targets]
+        return _interp(target_amp, targets, corrected)
 
-        corr = self._freq_correction()
-        corrected_amp = amplitude_vpp * corr
-        corrected_amp = _clamp(corrected_amp, 0.0, MAX_AMP)
+    def _target_to_corrected_cmd(self, target_amp):
+        f0, f1 = self._find_bracketing_freqs(self._frequency)
+
+        c0 = self._corrected_cmd_at_freq(target_amp, f0)
+        c1 = self._corrected_cmd_at_freq(target_amp, f1)
+
+        if f0 == f1:
+            return c0
+
+        frac = (self._frequency - f0) / (f1 - f0)
+        return c0 + frac * (c1 - c0)
+
+    def _amp_to_step(self, target_amp):
+        target_amp = self._snap_amplitude(target_amp)
+        corrected_cmd = self._target_to_corrected_cmd(target_amp)
+        corrected_cmd = _clamp(corrected_cmd, 0.0, MAX_AMP)
 
         if self._debug:
             print(
                 f"[Cal] freq={self._frequency}Hz "
-                f"target={amplitude_vpp:.3f}Vpp "
-                f"corr={corr:.3f} "
-                f"corrected_amp={corrected_amp:.3f}Vpp"
+                f"target={target_amp:.3f}Vpp "
+                f"corrected_cmd={corrected_cmd:.3f}"
             )
 
-        step = round((corrected_amp / MAX_AMP) * MAX_WIPER_STEP)
+        step = round((corrected_cmd / MAX_AMP) * MAX_WIPER_STEP)
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
@@ -170,7 +245,7 @@ class SineWaveGenerator:
         if self._debug:
             print(
                 f"[SineWave] applied freq={self._frequency}Hz "
-                f"amp={self._amp_v:.3f}Vpp step={step}"
+                f"target_amp={self._amp_v:.3f}Vpp step={step}"
             )
 
     def set_frequency(self, frequency):
@@ -190,7 +265,7 @@ class SineWaveGenerator:
             self._apply()
 
         if self._debug:
-            print(f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp")
+            print(f"[SineWave] amplitude target -> {self._amp_v:.3f} Vpp")
 
     def start(self):
         self._running = True
