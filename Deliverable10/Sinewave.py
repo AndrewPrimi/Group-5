@@ -7,53 +7,87 @@ MIN_FREQ = 1000
 MAX_FREQ = 10_000
 FREQ_STEP = 500
 
-MAX_AMP = 10.0
+MAX_AMP  = 10.0
 AMP_STEP = 0.625
 
 SPI_CHANNEL = 0
-SPI_BAUD = 1_000_000
+SPI_BAUD    = 1_000_000
 
 CMD_WRITE_WIPER0 = 0x00
 CMD_WRITE_WIPER1 = 0x10
 
-AMP_CAL_TABLE = {
-    0.000: 0,
-    0.625: 8,
-    1.250: 16,
-    1.875: 24,
-    2.500: 32,
-    3.125: 40,
-    3.750: 48,
-    4.375: 56,
-    5.000: 64,
-    5.625: 72,
-    6.250: 80,
-    6.875: 88,
-    7.500: 96,
-    8.125: 104,
-    8.750: 112,
-    9.375: 120,
-    10.000: 127,
-}
+
+# Measured data you provided:
+# (LCD request Vpp, actual measured output Vpp)
+#
+# This is used to invert the calibration so that when you request
+# a target amplitude, the software picks the command value that most
+# closely produces it on your current hardware.
+MEASURED_POINTS = [
+    (0.00, 0.00),
+    (0.62, 0.68),
+    (1.25, 1.05),
+    (1.88, 1.45),
+    (2.50, 1.85),
+    (3.12, 2.25),
+    (3.75, 2.65),
+    (4.38, 3.10),
+    (5.00, 3.50),
+    (5.62, 3.90),
+    (6.50, 4.22),
+    (6.80, 4.74),
+    (7.50, 5.11),
+    (8.12, 5.39),
+    (8.75, 5.87),
+    (9.38, 6.09),
+    (10.00, 6.50),
+]
 
 
 def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+def _interp(x, xp, fp):
+    """
+    Simple linear interpolation.
+    xp must be sorted ascending.
+    """
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+
+    for i in range(1, len(xp)):
+        if x <= xp[i]:
+            x0, x1 = xp[i - 1], xp[i]
+            y0, y1 = fp[i - 1], fp[i]
+            if x1 == x0:
+                return y0
+            frac = (x - x0) / (x1 - x0)
+            return y0 + frac * (y1 - y0)
+
+    return fp[-1]
+
+
 class SineWaveGenerator:
     def __init__(self, pi, debug=False):
-        self._pi = pi
+        self._pi        = pi
         self._frequency = MIN_FREQ
-        self._amp_v = 0.0
-        self._running = False
-        self._wave_id = None
-        self._debug = debug
+        self._amp_v     = 0.0
+        self._running   = False
+        self._wave_id   = None
+        self._debug     = debug
 
         self._spi = pi.spi_open(SPI_CHANNEL, SPI_BAUD, 0)
 
         pi.set_mode(PWM_GPIO, pigpio.OUTPUT)
         pi.write(PWM_GPIO, 0)
+
+        # Build inverse calibration:
+        # desired actual output -> needed LCD-equivalent command
+        self._measured_cmds   = [p[0] for p in MEASURED_POINTS]
+        self._measured_actual = [p[1] for p in MEASURED_POINTS]
 
     def _get_samples(self):
         f = self._frequency
@@ -76,26 +110,42 @@ class SineWaveGenerator:
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
         return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
-    def _amp_to_step(self, amplitude_vpp):
-        amplitude_vpp = self._snap_amplitude(amplitude_vpp)
-        keys = sorted(AMP_CAL_TABLE.keys())
+    def _amp_to_step(self, desired_actual_vpp):
+        """
+        Convert desired ACTUAL output amplitude to digipot step using your
+        measured calibration data.
 
-        if amplitude_vpp <= keys[0]:
-            return AMP_CAL_TABLE[keys[0]]
-        if amplitude_vpp >= keys[-1]:
-            return AMP_CAL_TABLE[keys[-1]]
+        Your measured data only reaches about 6.5 Vpp actual at a command
+        of 10.0 Vpp, so requests above that will clamp to full scale.
+        """
+        desired_actual_vpp = self._snap_amplitude(desired_actual_vpp)
 
-        for i in range(len(keys) - 1):
-            x0 = keys[i]
-            x1 = keys[i + 1]
-            if x0 <= amplitude_vpp <= x1:
-                y0 = AMP_CAL_TABLE[x0]
-                y1 = AMP_CAL_TABLE[x1]
-                frac = (amplitude_vpp - x0) / (x1 - x0)
-                step = y0 + frac * (y1 - y0)
-                return int(round(step))
+        # Invert the measured curve:
+        # desired actual output -> command value that should produce it
+        needed_cmd = _interp(
+            desired_actual_vpp,
+            self._measured_actual,
+            self._measured_cmds
+        )
 
-        return AMP_CAL_TABLE[keys[0]]
+        # Convert the command scale 0..10 to step scale 0..127
+        step = round((needed_cmd / 10.0) * 127.0)
+        step = int(_clamp(step, 0, 127))
+
+        if self._debug:
+            max_actual = self._measured_actual[-1]
+            if desired_actual_vpp > max_actual:
+                print(
+                    f"[Cal] requested {desired_actual_vpp:.3f} Vpp, "
+                    f"but measured hardware max is about {max_actual:.3f} Vpp. "
+                    f"Clamping to full scale."
+                )
+            print(
+                f"[Cal] target_actual={desired_actual_vpp:.3f} Vpp "
+                f"-> cmd≈{needed_cmd:.3f} -> step={step}"
+            )
+
+        return step
 
     def _build_wave(self):
         n = self._get_samples()
@@ -122,7 +172,7 @@ class SineWaveGenerator:
         if slot_list[-1] < 1:
             slot_list[-1] = 1
 
-        on_mask = 1 << PWM_GPIO
+        on_mask  = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
         pulses = []
 
@@ -130,7 +180,7 @@ class SineWaveGenerator:
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
             high_us = int(round(duty * slot_us))
-            low_us = slot_us - high_us
+            low_us  = slot_us - high_us
 
             if high_us > 0:
                 pulses.append(pigpio.pulse(on_mask, 0, high_us))
@@ -176,7 +226,7 @@ class SineWaveGenerator:
         if self._debug:
             print(
                 f"[SineWave] applied freq={self._frequency}Hz "
-                f"amp={self._amp_v:.3f}Vpp step={step}"
+                f"target_amp={self._amp_v:.3f}Vpp step={step}"
             )
 
     def set_frequency(self, frequency):
@@ -196,7 +246,7 @@ class SineWaveGenerator:
             self._apply()
 
         if self._debug:
-            print(f"[SineWave] amplitude -> {self._amp_v:.3f} Vpp")
+            print(f"[SineWave] amplitude target -> {self._amp_v:.3f} Vpp")
 
     def start(self):
         self._running = True
@@ -244,7 +294,7 @@ if __name__ == "__main__":
 
     gen = SineWaveGenerator(pi, debug=True)
 
-    gen.set_frequency(2500)
+    gen.set_frequency(5000)
     gen.set_amplitude(5.0)
     gen.start()
 
