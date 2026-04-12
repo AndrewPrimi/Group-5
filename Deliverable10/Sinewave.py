@@ -58,35 +58,20 @@ class SineWaveGenerator:
 
     def _freq_correction(self):
         """
-        Frequency-based correction factor.
+        Exponential correction based on your measured behavior.
 
-        Built for the plan:
-        - hardware is adjusted so 10 kHz can reach about 10 Vpp
-        - software scales lower frequencies down
+        For a 5 Vpp target:
+          1 kHz  -> actual ~12.3 Vpp  => correction ~ 5/12.3 = 0.4065
+          10 kHz -> actual ~ 6.0 Vpp  => correction ~ 5/6.0  = 0.8333
 
-        Anchor points:
-        - 1000 Hz  -> 0.667  (because 10 in was giving about 15 out)
-        - 5000 Hz  -> 1.000  (because 10 in was giving about 10 out)
-        - 10000 Hz -> 1.000  (leave full scale available)
+        Fit used:
+            corr(f) = 0.4065 * (f / 1000)^0.312
         """
-        freq_pts = [1000, 5000, 10000]
-        corr_pts = [0.667, 1.000, 1.000]
+        f = float(self._frequency)
+        corr = 0.4065 * ((f / 1000.0) ** 0.312)
 
-        f = self._frequency
-
-        if f <= freq_pts[0]:
-            return corr_pts[0]
-        if f >= freq_pts[-1]:
-            return corr_pts[-1]
-
-        for i in range(1, len(freq_pts)):
-            if f <= freq_pts[i]:
-                f0, f1 = freq_pts[i - 1], freq_pts[i]
-                c0, c1 = corr_pts[i - 1], corr_pts[i]
-                frac = (f - f0) / (f1 - f0)
-                return c0 + frac * (c1 - c0)
-
-        return corr_pts[-1]
+        # Keep it sane
+        return _clamp(corr, 0.25, 1.00)
 
     def _amp_to_step(self, amplitude_vpp):
         amplitude_vpp = self._snap_amplitude(amplitude_vpp)
