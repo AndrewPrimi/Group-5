@@ -56,9 +56,54 @@ class SineWaveGenerator:
         snapped = round(float(amplitude_vpp) / AMP_STEP) * AMP_STEP
         return _clamp(round(snapped, 3), 0.0, MAX_AMP)
 
+    def _freq_correction(self):
+        """
+        Frequency-based correction factor.
+
+        Built for the plan:
+        - hardware is adjusted so 10 kHz can reach about 10 Vpp
+        - software scales lower frequencies down
+
+        Anchor points:
+        - 1000 Hz  -> 0.667  (because 10 in was giving about 15 out)
+        - 5000 Hz  -> 1.000  (because 10 in was giving about 10 out)
+        - 10000 Hz -> 1.000  (leave full scale available)
+        """
+        freq_pts = [1000, 5000, 10000]
+        corr_pts = [0.667, 1.000, 1.000]
+
+        f = self._frequency
+
+        if f <= freq_pts[0]:
+            return corr_pts[0]
+        if f >= freq_pts[-1]:
+            return corr_pts[-1]
+
+        for i in range(1, len(freq_pts)):
+            if f <= freq_pts[i]:
+                f0, f1 = freq_pts[i - 1], freq_pts[i]
+                c0, c1 = corr_pts[i - 1], corr_pts[i]
+                frac = (f - f0) / (f1 - f0)
+                return c0 + frac * (c1 - c0)
+
+        return corr_pts[-1]
+
     def _amp_to_step(self, amplitude_vpp):
         amplitude_vpp = self._snap_amplitude(amplitude_vpp)
-        step = round((amplitude_vpp / MAX_AMP) * MAX_WIPER_STEP)
+
+        corr = self._freq_correction()
+        corrected_amp = amplitude_vpp * corr
+        corrected_amp = _clamp(corrected_amp, 0.0, MAX_AMP)
+
+        if self._debug:
+            print(
+                f"[Cal] freq={self._frequency}Hz "
+                f"target={amplitude_vpp:.3f}Vpp "
+                f"corr={corr:.3f} "
+                f"corrected_amp={corrected_amp:.3f}Vpp"
+            )
+
+        step = round((corrected_amp / MAX_AMP) * MAX_WIPER_STEP)
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
