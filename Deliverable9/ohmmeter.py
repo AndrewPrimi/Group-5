@@ -102,7 +102,7 @@ def calibrate_resistance(raw_ohms):
 
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
-    """Return the raw resistance from the step value."""
+    """Convert SAR step to raw resistance before calibration."""
     if step <= 0:
         return float('inf')
 
@@ -110,3 +110,37 @@ def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
         return 0.0
 
     return r_ref * (MCP4131_MAX_STEPS - step) / step
+
+
+def step_to_resistance(step, r_ref=R_REF_OHMS):
+    """Convert SAR step to calibrated resistance."""
+    raw_ohms = step_to_raw_resistance(step, r_ref)
+    corrected = calibrate_resistance(raw_ohms)
+
+    if math.isinf(corrected):
+        return corrected
+
+    return max(R_MIN_OHMS, min(corrected, R_MAX_OHMS))
+
+
+def tolerance(step, r_ref=R_REF_OHMS, r_ref_tol_pct=R_REF_TOLERANCE_PCT):
+    """
+    Estimate measurement tolerance from:
+    - quantization error of one half step
+    - reference resistor tolerance
+    """
+    measured = step_to_resistance(step, r_ref)
+
+    if math.isinf(measured) or measured <= 0:
+        return float('inf')
+
+    lower_step = max(1, step - 1)
+    upper_step = min(MCP4131_MAX_STEPS - 1, step + 1)
+
+    lower_r = step_to_resistance(lower_step, r_ref)
+    upper_r = step_to_resistance(upper_step, r_ref)
+
+    quant_error = max(abs(measured - lower_r), abs(upper_r - measured))
+    ref_error = measured * r_ref_tol_pct
+
+    return quant_error + ref_error
