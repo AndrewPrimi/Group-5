@@ -2,21 +2,22 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-Debugged version:
-- keeps original SAR comparator logic
-- uses correct divider equation for measuring across R_unknown
-- disables calibration until fresh calibration points are collected
+Updated version:
+- Uses full 7-bit SAR on the MCP4131 wiper (0..127)
+- Uses divider equation for node measured across R_unknown
+- Calibration disabled for now
 """
 
 import time
 import pigpio
 
-ADC_SPI_CHANNEL   = 1
-ADC_SPI_SPEED     = 50_000
-ADC_SPI_FLAGS     = 0
+ADC_SPI_CHANNEL = 1
+ADC_SPI_SPEED   = 50_000
+ADC_SPI_FLAGS   = 0
 
-COMPARATOR2_PIN   = 24
-MCP4131_MAX_STEPS = 31
+COMPARATOR2_PIN = 24
+
+MCP4131_MAX_CODE = 127
 
 R_REF_OHMS = 2000
 R_REF_TOLERANCE_PCT = 0.01
@@ -29,9 +30,9 @@ _SETTLE_S = 0.02
 USE_CALIBRATION = False
 
 CAL_POINTS = [
-    (214.0,   220.0),
-    (5750.0,  5000.0),
-    (10400.0, 10000.0),
+    (1000.0, 1000.0),
+    (5000.0, 5000.0),
+    (10000.0, 10000.0),
 ]
 
 
@@ -45,41 +46,43 @@ def close_adc(pi, spi_handle):
     pi.spi_close(spi_handle)
 
 
-def _write_dac(pi, spi_handle, step):
-    step = max(0, min(step, MCP4131_MAX_STEPS))
-    dac_code = round(step * 127 / MCP4131_MAX_STEPS)
-    pi.spi_write(spi_handle, [0x00, dac_code])
+def _write_dac(pi, spi_handle, code):
+    code = max(0, min(code, MCP4131_MAX_CODE))
+    pi.spi_write(spi_handle, [0x00, code])
 
 
 def sar_measure(pi, spi_handle, comp_pin):
     """
-    Original working SAR logic:
+    Full 7-bit SAR using actual MCP4131 code values.
+
+    Current comparator behavior:
       comp == 0 -> KEEP bit
       comp == 1 -> DISCARD bit
     """
-    step = 0
+    code = 0
 
-    for bit_pos in range(4, -1, -1):
-        trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
+    for bit_pos in range(6, -1, -1):
+        trial = min(code | (1 << bit_pos), MCP4131_MAX_CODE)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
+        decision = "KEEP" if comp == 0 else "DISCARD"
+        print(f"  bit {bit_pos}: trial={trial:3d}  comp={comp}  -> {decision}")
 
         if comp == 0:
-            step = trial
+            code = trial
 
-    _write_dac(pi, spi_handle, step)
-    print(f"Final SAR step = {step}")
-    return step
+    _write_dac(pi, spi_handle, code)
+    print(f"Final SAR code = {code}")
+    return code
 
 
 def averaged_measure(pi, spi_handle, comp_pin, n=11):
     readings = sorted(sar_measure(pi, spi_handle, comp_pin) for _ in range(n))
-    median_step = readings[n // 2]
-    print(f"Median SAR step = {median_step}")
-    return median_step
+    median_code = readings[n // 2]
+    print(f"Median SAR code = {median_code}")
+    return median_code
 
 
 def _interp(x, x0, y0, x1, y1):
@@ -103,24 +106,35 @@ def calibrate_resistance(raw_ohms):
     return _interp(raw_ohms, x0, y0, x1, y1)
 
 
-def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
+def code_to_raw_resistance(code, r_ref=R_REF_OHMS):
     """
     Divider equation for node measured across R_unknown:
 
-        R_unknown = R_ref * step / (MAX - step)
+        Vnode / Vcc = R_unknown / (R_ref + R_unknown)
+
+    If DAC threshold is proportional to code/127, then:
+
+        R_unknown = R_ref * code / (127 - code)
     """
-    if step <= 0:
+    if code <= 0:
         return 0.0
 
-    if step >= MCP4131_MAX_STEPS:
+    if code >= MCP4131_MAX_CODE:
         return float('inf')
 
-    return r_ref * step / (MCP4131_MAX_STEPS - step)
+    return r_ref * code / (MCP4131_MAX_CODE - code)
+
+
+def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
+    """
+    Backward-compatible wrapper in case other files still call this name.
+    """
+    return code_to_raw_resistance(step, r_ref)
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
-    raw_r = step_to_raw_resistance(step, r_ref)
-    print(f"step_to_resistance: step={step}, raw_r={raw_r}")
+    raw_r = code_to_raw_resistance(step, r_ref)
+    print(f"step_to_resistance: code={step}, raw_r={raw_r}")
 
     if raw_r == float('inf'):
         return float('inf')
@@ -137,8 +151,13 @@ def tolerance(step, r_ref=R_REF_OHMS):
     if step <= 0:
         return 50.0
 
-    if step >= MCP4131_MAX_STEPS:
+    if step >= MCP4131_MAX_CODE:
         return float('inf')
 
-    r_ext = step_to_resistance(step, r_ref)
-    return max(50.0, 0.02 * r_ext)
+    r_here = code_to_raw_resistance(step, r_ref)
+    r_next = code_to_raw_resistance(min(step + 1, MCP4131_MAX_CODE - 1), r_ref)
+
+    quant_tol = abs(r_next - r_here)
+    practical_tol = max(50.0, 0.02 * r_here)
+
+    return max(quant_tol, practical_tol)
