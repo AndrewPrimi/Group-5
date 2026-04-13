@@ -2,10 +2,10 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-Updated version:
-- Uses corrected divider formula
-- Flips SAR comparator decision logic for ohmmeter
-- Disables calibration by default until new points are collected
+Debug version:
+- Restores original SAR logic
+- Restores original divider formula
+- Disables calibration so raw behavior can be checked first
 """
 
 import time
@@ -26,14 +26,8 @@ R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
 
-# Set this to True only after collecting NEW calibration points
 USE_CALIBRATION = False
 
-# -------------------------------------------------------------------
-# Calibration points
-# Format: (raw_measured_ohms, actual_ohms)
-# These should be rebuilt after fixing the raw equation/SAR logic.
-# -------------------------------------------------------------------
 CAL_POINTS = [
     (214.0,   220.0),
     (5750.0,  5000.0),
@@ -59,13 +53,9 @@ def _write_dac(pi, spi_handle, step):
 
 def sar_measure(pi, spi_handle, comp_pin):
     """
-    Ohmmeter SAR logic.
-
-    For this version:
-      comp == 1 -> KEEP bit
-      comp == 0 -> DISCARD bit
-
-    This is the opposite of the previous version.
+    Original working SAR logic:
+      comp == 0 -> KEEP bit
+      comp == 1 -> DISCARD bit
     """
     step = 0
 
@@ -75,10 +65,10 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        decision = "KEEP" if comp == 1 else "DISCARD"
+        decision = "KEEP" if comp == 0 else "DISCARD"
         print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {decision}")
 
-        if comp == 1:
+        if comp == 0:
             step = trial
 
     _write_dac(pi, spi_handle, step)
@@ -116,21 +106,20 @@ def calibrate_resistance(raw_ohms):
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
     """
-    Divider formula:
-        R_unknown = R_ref * step / (MAX - step)
+    Divider formula for this wiring:
+        R_unknown = R_ref * (MAX - step) / step
     """
     if step <= 0:
-        return 0.0
-
-    if step >= MCP4131_MAX_STEPS:
         return float('inf')
 
-    return r_ref * step / (MCP4131_MAX_STEPS - step)
+    if step >= MCP4131_MAX_STEPS:
+        return 0.0
+
+    return r_ref * (MCP4131_MAX_STEPS - step) / step
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     raw_r = step_to_raw_resistance(step, r_ref)
-
     print(f"step_to_resistance: step={step}, raw_r={raw_r}")
 
     if raw_r == float('inf'):
@@ -145,8 +134,11 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    if step <= 0 or step >= MCP4131_MAX_STEPS:
+    if step <= 0:
         return float('inf')
+
+    if step >= MCP4131_MAX_STEPS:
+        return 50.0
 
     r_ext = step_to_resistance(step, r_ref)
     return max(50.0, 0.02 * r_ext)
