@@ -2,10 +2,10 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-Debug version:
-- Restores original SAR logic
-- Restores original divider formula
-- Disables calibration so raw behavior can be checked first
+Debugged version:
+- keeps original SAR comparator logic
+- uses correct divider equation for measuring across R_unknown
+- disables calibration until fresh calibration points are collected
 """
 
 import time
@@ -18,7 +18,7 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-R_REF_OHMS          = 2000
+R_REF_OHMS = 2000
 R_REF_TOLERANCE_PCT = 0.01
 
 R_MIN_OHMS = 100
@@ -65,8 +65,7 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        decision = "KEEP" if comp == 0 else "DISCARD"
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {decision}")
+        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
 
         if comp == 0:
             step = trial
@@ -106,16 +105,17 @@ def calibrate_resistance(raw_ohms):
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
     """
-    Divider formula for this wiring:
-        R_unknown = R_ref * (MAX - step) / step
+    Divider equation for node measured across R_unknown:
+
+        R_unknown = R_ref * step / (MAX - step)
     """
     if step <= 0:
-        return float('inf')
-
-    if step >= MCP4131_MAX_STEPS:
         return 0.0
 
-    return r_ref * (MCP4131_MAX_STEPS - step) / step
+    if step >= MCP4131_MAX_STEPS:
+        return float('inf')
+
+    return r_ref * step / (MCP4131_MAX_STEPS - step)
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
@@ -135,10 +135,10 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 def tolerance(step, r_ref=R_REF_OHMS):
     if step <= 0:
-        return float('inf')
+        return 50.0
 
     if step >= MCP4131_MAX_STEPS:
-        return 50.0
+        return float('inf')
 
     r_ext = step_to_resistance(step, r_ref)
     return max(50.0, 0.02 * r_ext)
