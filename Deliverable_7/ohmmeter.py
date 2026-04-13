@@ -2,12 +2,13 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-This version keeps the current working SAR logic and adds
-piecewise-linear calibration for the resistance display.
+Updated version:
+- Uses corrected divider formula
+- Flips SAR comparator decision logic for ohmmeter
+- Disables calibration by default until new points are collected
 """
 
 import time
-import math
 import pigpio
 
 ADC_SPI_CHANNEL   = 1
@@ -17,18 +18,21 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-R_REF_OHMS            = 2000
-R_REF_TOLERANCE_PCT   = 0.01
+R_REF_OHMS          = 2000
+R_REF_TOLERANCE_PCT = 0.01
 
 R_MIN_OHMS = 100
 R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
 
+# Set this to True only after collecting NEW calibration points
+USE_CALIBRATION = False
+
 # -------------------------------------------------------------------
 # Calibration points
 # Format: (raw_measured_ohms, actual_ohms)
-# Add more points later if needed.
+# These should be rebuilt after fixing the raw equation/SAR logic.
 # -------------------------------------------------------------------
 CAL_POINTS = [
     (214.0,   220.0),
@@ -55,9 +59,13 @@ def _write_dac(pi, spi_handle, step):
 
 def sar_measure(pi, spi_handle, comp_pin):
     """
-    Current working SAR logic:
-      comp == 0 -> KEEP bit
-      comp == 1 -> DISCARD bit
+    Ohmmeter SAR logic.
+
+    For this version:
+      comp == 1 -> KEEP bit
+      comp == 0 -> DISCARD bit
+
+    This is the opposite of the previous version.
     """
     step = 0
 
@@ -67,32 +75,31 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
+        decision = "KEEP" if comp == 1 else "DISCARD"
+        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {decision}")
 
-        if comp == 0:
+        if comp == 1:
             step = trial
 
     _write_dac(pi, spi_handle, step)
+    print(f"Final SAR step = {step}")
     return step
 
 
 def averaged_measure(pi, spi_handle, comp_pin, n=11):
     readings = sorted(sar_measure(pi, spi_handle, comp_pin) for _ in range(n))
-    return readings[n // 2]
+    median_step = readings[n // 2]
+    print(f"Median SAR step = {median_step}")
+    return median_step
 
 
 def _interp(x, x0, y0, x1, y1):
-    """Linear interpolation."""
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
 
 def calibrate_resistance(raw_ohms):
-    """
-    Convert raw computed resistance to calibrated resistance using
-    piecewise-linear interpolation through CAL_POINTS.
-    """
     pts = CAL_POINTS
 
     if raw_ohms <= pts[0][0]:
@@ -109,7 +116,7 @@ def calibrate_resistance(raw_ohms):
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
     """
-    Raw divider formula:
+    Divider formula:
         R_unknown = R_ref * step / (MAX - step)
     """
     if step <= 0:
@@ -124,19 +131,22 @@ def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     raw_r = step_to_raw_resistance(step, r_ref)
 
+    print(f"step_to_resistance: step={step}, raw_r={raw_r}")
+
     if raw_r == float('inf'):
         return float('inf')
 
-    return calibrate_resistance(raw_r)
+    if USE_CALIBRATION:
+        calibrated = calibrate_resistance(raw_r)
+        print(f"calibrated_r={calibrated}")
+        return calibrated
+
+    return raw_r
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    """
-    Practical display tolerance.
-    """
     if step <= 0 or step >= MCP4131_MAX_STEPS:
         return float('inf')
 
     r_ext = step_to_resistance(step, r_ref)
-
     return max(50.0, 0.02 * r_ext)
