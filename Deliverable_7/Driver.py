@@ -143,7 +143,7 @@ def run_ohmmeter():
             lcd.put_line(2, l2)
             lcd.put_line(3, l3)
 
-            # DEBUG PRINT (IMPORTANT FOR CALIBRATION)
+            # Debug print
             resistance = step_to_resistance(step)
             print(f"[Ohmmeter] step={step}  resistance={resistance:.2f} ohms")
 
@@ -158,32 +158,42 @@ def run_voltmeter():
         if choice in (SRC_BACK, SRC_MAIN):
             break
 
-        run_measurement(state, pi, lcd, adc_handle,
-                        source_label=SOURCE_LABELS[choice])
+        run_measurement(
+            state, pi, lcd, adc_handle,
+            source_label=SOURCE_LABELS[choice]
+        )
 
 
 # ── Display helpers ─────────────────────────────────────
 
 def format_ohms(ohms):
+    if ohms == float('inf'):
+        return "INF"
     if ohms >= 1000:
         return f'{ohms/1000:.2f}k'
     return f'{ohms:.0f}'
 
 
 def build_display_lines(step):
+    print("step is:", step)
+
+    # Low step means low threshold / low measured resistance end
+    if step <= 0:
+        return "Ohmmeter", "Short circuit", "", "Hold btn: main"
+
+    # High step means high threshold / high measured resistance end
+    if step >= MCP4131_MAX_STEPS:
+        return "Ohmmeter", "Open circuit", "", "Hold btn: main"
+
     r = step_to_resistance(step)
     tol = tolerance(step)
 
-    #if step <= 0:
-        #return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
-    #if step >= MCP4131_MAX_STEPS:
-        #return "Ohmmeter", "Open circuit", "", "Hold btn: main menu"
-    print("step is: ", step)
-    if step >= MCP4131_MAX_STEPS:
-        return "Ohmmeter", "Short circuit", "", "Hold btn: main menu"
-    if step <= 0:
-        return "Ohmmeter", "Open circuit", "", "Hold btn: main menu"
-    
+    # Optional soft range guard
+    if r < R_MIN_OHMS:
+        return "Ohmmeter", "Below range", "", "Hold btn: main"
+    if r > R_MAX_OHMS:
+        return "Ohmmeter", "Above range", "", "Hold btn: main"
+
     r_str = format_ohms(r)
     tol_str = format_ohms(tol)
 
@@ -211,6 +221,7 @@ try:
 except KeyboardInterrupt:
     print("\nStopping...")
 
+finally:
     clear_callbacks(state)
     lcd.close()
     close_adc(pi, adc_handle)
