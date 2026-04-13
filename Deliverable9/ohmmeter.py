@@ -1,4 +1,3 @@
-
 """
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
@@ -60,33 +59,33 @@ def sar_measure(pi, spi_handle, comp_pin):
     step = 0
 
     for bit_pos in range(4, -1, -1):
-        """The trial is the step value plus the next significant bit."""
+        # The trial is the step value plus the next significant bit.
         trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
 
-        """The comp_pin read determines keep (0) or delete (1)."""
+        # The comp_pin read determines keep (0) or discard (1).
         comp = pi.read(comp_pin)
         print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
 
         if comp == 0:
             step = trial
 
-    """Write the final step value to convert to analog."""
+    # Write the final step value to convert to analog.
     _write_dac(pi, spi_handle, step)
     return step
 
 
 def averaged_measure(pi, spi_handle, comp_pin, n=11):
-    """Return the median step from n SAR conversions."""  
+    """Return the median step from n SAR conversions."""
     readings = sorted(sar_measure(pi, spi_handle, comp_pin) for _ in range(n))
     return readings[n // 2]
 
 
 def _interp(x, x0, y0, x1, y1):
     """Linear interpolation for predicting the correct resistance y
-       between y0 and y1. x is the uncalibrated resistance."""
-    # x1 and x0 are the same
+    between y0 and y1. x is the uncalibrated resistance.
+    """
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
@@ -112,7 +111,7 @@ def calibrate_resistance(raw_ohms):
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
     """Return the raw resistance from the step value."""
-     if step <= 0:
+    if step <= 0:
         # open
         return float('inf')
 
