@@ -96,14 +96,12 @@ def calibrate_resistance(raw_ohms):
     pts = CAL_POINTS
 
     if raw_ohms <= pts[0][0]:
-        # Scale below first point from 0 -> first point
         return _interp(raw_ohms, 0.0, 0.0, pts[0][0], pts[0][1])
 
     for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
         if x0 <= raw_ohms <= x1:
             return _interp(raw_ohms, x0, y0, x1, y1)
 
-    # Above last point: extend using last segment slope
     x0, y0 = pts[-2]
     x1, y1 = pts[-1]
     return _interp(raw_ohms, x0, y0, x1, y1)
@@ -112,15 +110,15 @@ def calibrate_resistance(raw_ohms):
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
     """
     Raw divider formula:
-        R_unknown = R_ref * (MAX - step) / step
+        R_unknown = R_ref * step / (MAX - step)
     """
     if step <= 0:
-        return float('inf')
-
-    if step >= MCP4131_MAX_STEPS:
         return 0.0
 
-    return r_ref * (MCP4131_MAX_STEPS - step) / step
+    if step >= MCP4131_MAX_STEPS:
+        return float('inf')
+
+    return r_ref * step / (MCP4131_MAX_STEPS - step)
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
@@ -141,5 +139,4 @@ def tolerance(step, r_ref=R_REF_OHMS):
 
     r_ext = step_to_resistance(step, r_ref)
 
-    # Aim for a practical visible tolerance estimate
     return max(50.0, 0.02 * r_ext)
