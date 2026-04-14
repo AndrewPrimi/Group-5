@@ -14,6 +14,7 @@ Integrates:
 """
 
 import time
+import threading
 import pigpio
 
 import i2c_lcd
@@ -53,7 +54,7 @@ from Sinewave import (
     MAX_AMP as SINE_MAX_AMP,
     AMP_STEP as SINE_AMP_STEP,
 )
-from Sinewave_measurement import FrequencyMeter
+from freq_meter_sw import measure_frequency
 from DC_ref_internal import measure_dc_ref
 
 
@@ -267,7 +268,8 @@ def run_fg_output():
 
 
 def run_frequency_measurement():
-    """Live frequency reading on GPIO 5 with Back/Main navigation."""
+    """Frequency measurement via SAR zero-crossing. Runs measurement in a
+    background thread so Back/Main navigation stays responsive."""
     state['encoder_delta'] = 0
     state['button_pressed'] = False
     state['button_last_tick'] = None
@@ -293,7 +295,12 @@ def run_frequency_measurement():
     cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
     state['active_callbacks'] = [decoder, cb_btn]
 
-    freq_meter = FrequencyMeter(pi)
+    _result = [0.0]   # shared result from background thread
+    _thread  = [None]
+
+    def _measure():
+        freq, _ = measure_frequency(pi, spi_ce1)
+        _result[0] = freq
 
     def _draw_nav():
         if nav_idx == 0:
@@ -304,10 +311,9 @@ def run_frequency_measurement():
             lcd.put_line(3, ">Main")
 
     lcd.put_line(0, "Freq Measurement")
-    lcd.put_line(1, "Waiting...")
+    lcd.put_line(1, "Measuring...")
     _draw_nav()
 
-    last_update = 0.0
     try:
         while True:
             delta = state.get('encoder_delta', 0)
@@ -320,18 +326,17 @@ def run_frequency_measurement():
                 state['button_pressed'] = False
                 return "BACK" if nav_idx == 0 else "MAIN"
 
-            now = time.time()
-            if now - last_update >= 0.5:
-                last_update = now
-                freq = freq_meter.get_frequency()
-                if freq > 0:
-                    lcd.put_line(1, f"{freq:.1f} Hz")
+            # When previous measurement finishes, display result and start next
+            if _thread[0] is None or not _thread[0].is_alive():
+                if _result[0] > 0:
+                    lcd.put_line(1, f"{_result[0]:.1f} Hz")
                 else:
                     lcd.put_line(1, "No signal")
+                _thread[0] = threading.Thread(target=_measure, daemon=True)
+                _thread[0].start()
 
             time.sleep(0.05)
     finally:
-        freq_meter.cleanup()
         state['button_pressed'] = False
         clear_callbacks(state)
 
