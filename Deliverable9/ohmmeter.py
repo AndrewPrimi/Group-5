@@ -2,8 +2,11 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-This version keeps the current working SAR logic and adds
-piecewise-linear calibration for the resistance display.
+This version keeps the current SAR logic and uses the divider
+relationship that matches the measured behavior:
+higher resistance -> lower SAR step.
+
+It also uses a more realistic R_REF_OHMS value based on your tests.
 """
 
 import time
@@ -17,7 +20,9 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-R_REF_OHMS            = 2000
+# Based on your measured steps, 2000 is not matching the real hardware.
+# This value is a much better fit for your current results.
+R_REF_OHMS            = 13000
 R_REF_TOLERANCE_PCT   = 0.01
 
 R_MIN_OHMS = 100
@@ -25,10 +30,14 @@ R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
 
+# You can leave calibration off for now while getting the math right.
+# Once the raw readings are close, then add calibration back in.
+USE_CALIBRATION = False
+
 CAL_POINTS = [
-    (214.0,   220.0),
-    (5750.0,  5000.0),
-    (10400.0, 10000.0),
+    (1000.0, 1000.0),
+    (5000.0, 5000.0),
+    (10000.0, 10000.0),
 ]
 
 
@@ -72,7 +81,7 @@ def averaged_measure(pi, spi_handle, comp_pin, n=11):
 
 
 def _interp(x, x0, y0, x1, y1):
-    """Linear interpolation for predicting the correct resistance."""
+    """Linear interpolation."""
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
@@ -97,29 +106,37 @@ def calibrate_resistance(raw_ohms):
 
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
-    """Return the raw resistance from the step value."""
-    if step <= 0:
-        return 0.0
+    """
+    Convert SAR step to raw resistance.
 
-    if step >= MCP4131_MAX_STEPS:
+    This matches the behavior you measured:
+    - low resistance -> high step
+    - high resistance -> low step
+    """
+    if step <= 0:
         return float('inf')
 
-    return r_ref * step / (MCP4131_MAX_STEPS - step)
+    if step >= MCP4131_MAX_STEPS:
+        return 0.0
+
+    return r_ref * (MCP4131_MAX_STEPS - step) / step
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
-    """Return calibrated resistance from the SAR step."""
     raw_ohms = step_to_raw_resistance(step, r_ref)
 
-    if math.isinf(raw_ohms):
+    # Open circuit is still floating in hardware, so treat very low steps as open.
+    # You can tighten this later once the hardware is cleaned up.
+    if step <= 13:
+        return float('inf')
+
+    if not USE_CALIBRATION:
         return raw_ohms
 
-    corrected = calibrate_resistance(raw_ohms)
-    return max(R_MIN_OHMS, min(corrected, R_MAX_OHMS))
+    return calibrate_resistance(raw_ohms)
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    """Simple tolerance estimate based on reference resistor tolerance."""
     resistance = step_to_resistance(step, r_ref)
 
     if math.isinf(resistance):
