@@ -2,11 +2,12 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-This version keeps the current SAR logic and uses the divider
-relationship that matches the measured behavior:
-higher resistance -> lower SAR step.
-
-It also uses a more realistic R_REF_OHMS value based on your tests.
+Uses step-based calibration based on measured hardware behavior.
+Display range is limited to 500 to 10000 ohms.
+Special cases:
+- Open circuit
+- Short circuit
+- Not in range
 """
 
 import time
@@ -20,24 +21,23 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-# Based on your measured steps, 2000 is not matching the real hardware.
-# This value is a much better fit for your current results.
 R_REF_OHMS            = 13000
 R_REF_TOLERANCE_PCT   = 0.01
 
-R_MIN_OHMS = 100
+R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
 
-# You can leave calibration off for now while getting the math right.
-# Once the raw readings are close, then add calibration back in.
-USE_CALIBRATION = False
-
-CAL_POINTS = [
-    (1000.0, 1000.0),
-    (5000.0, 5000.0),
-    (10000.0, 10000.0),
+# -------------------------------------------------------------------
+# Step-based calibration points from your measured data
+# Format: (step, actual_ohms)
+# -------------------------------------------------------------------
+STEP_CAL_POINTS = [
+    (18, 10000.0),
+    (22, 5000.0),
+    (25, 3000.0),
+    (31, 1000.0),
 ]
 
 
@@ -81,65 +81,57 @@ def averaged_measure(pi, spi_handle, comp_pin, n=11):
 
 
 def _interp(x, x0, y0, x1, y1):
-    """Linear interpolation."""
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
 
-def calibrate_resistance(raw_ohms):
-    if math.isinf(raw_ohms):
-        return raw_ohms
-
-    pts = sorted(CAL_POINTS)
-
-    if raw_ohms <= pts[0][0]:
-        return _interp(raw_ohms, *pts[0], *pts[1])
-
-    for i in range(len(pts) - 1):
-        x0, y0 = pts[i]
-        x1, y1 = pts[i + 1]
-        if x0 <= raw_ohms <= x1:
-            return _interp(raw_ohms, x0, y0, x1, y1)
-
-    return _interp(raw_ohms, *pts[-2], *pts[-1])
-
-
-def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
+def calibrate_step_to_resistance(step):
     """
-    Convert SAR step to raw resistance.
+    Convert SAR step directly to resistance using measured data.
 
-    This matches the behavior you measured:
-    - low resistance -> high step
-    - high resistance -> low step
+    Special handling:
+    - very low steps behave like open circuit
+    - very high steps behave like short circuit / very low resistance
     """
-    if step <= 0:
+    pts = sorted(STEP_CAL_POINTS)
+
+    # Open circuit region
+    if step < pts[0][0]:
         return float('inf')
 
-    if step >= MCP4131_MAX_STEPS:
+    # Short circuit / very low resistance region
+    if step > pts[-1][0]:
         return 0.0
 
-    return r_ref * (MCP4131_MAX_STEPS - step) / step
+    # Exact top endpoint
+    if step == pts[-1][0]:
+        return pts[-1][1]
+
+    for i in range(len(pts) - 1):
+        s0, r0 = pts[i]
+        s1, r1 = pts[i + 1]
+        if s0 <= step <= s1:
+            return _interp(step, s0, r0, s1, r1)
+
+    return float('inf')
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
-    raw_ohms = step_to_raw_resistance(step, r_ref)
-
-    # Open circuit is still floating in hardware, so treat very low steps as open.
-    # You can tighten this later once the hardware is cleaned up.
-    if step <= 13:
-        return float('inf')
-
-    if not USE_CALIBRATION:
-        return raw_ohms
-
-    return calibrate_resistance(raw_ohms)
+    """
+    Main resistance conversion.
+    Returns:
+    - float('inf') for open circuit
+    - 0.0 for short circuit / near-short
+    - calibrated resistance otherwise
+    """
+    return calibrate_step_to_resistance(step)
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
     resistance = step_to_resistance(step, r_ref)
 
-    if math.isinf(resistance):
-        return float('inf')
+    if math.isinf(resistance) or resistance <= 0:
+        return 0.0
 
     return resistance * R_REF_TOLERANCE_PCT
