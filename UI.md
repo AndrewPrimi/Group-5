@@ -40,9 +40,10 @@ i. OFF: Everything is off.
 ii. Mode Select
 1. Function Generator
     a. Type
-        i. Square
-        ii. Back
-        iii. Main
+        i. Sine
+        ii. Square
+        iii. Back
+        iiii. Main
     b. Frequency
         i. Input Frequency
         ii. Back
@@ -79,7 +80,11 @@ ii. Mode Select
         iv. Main
     c. Back
     d. Main
-5. Back
-6. Main
+
+5. Frequency Measurement
+    a. Back
+    b. Main 
+6. Back
+7. Main
 
 (Indenting should help with organization when you read this file)
