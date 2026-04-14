@@ -5,7 +5,7 @@ DUTY = 500_000   # 50% duty cycle
 
 MIN_FREQ = 100
 MAX_FREQ = 10_000
-FREQ_STEP = 10
+FREQ_STEP = 500
 
 # User-facing amplitude in V (peak). Output swings ±amplitude centered at 0V.
 MAX_AMP = 10.0
