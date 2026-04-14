@@ -56,9 +56,9 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 1 else 'DISCARD'}")
+        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
 
-        if comp == 1:
+        if comp == 0:
             step = trial
 
     _write_dac(pi, spi_handle, step)
@@ -99,18 +99,23 @@ def calibrate_resistance(raw_ohms):
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
     """Return the raw resistance from the step value."""
     if step <= 0:
-        return float('inf')
-
-    if step >= MCP4131_MAX_STEPS:
         return 0.0
 
-    return r_ref * (MCP4131_MAX_STEPS - step) / step
+    if step >= MCP4131_MAX_STEPS:
+        return float('inf')
+
+    return r_ref * step / (MCP4131_MAX_STEPS - step)
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     """Return calibrated resistance from the SAR step."""
     raw_ohms = step_to_raw_resistance(step, r_ref)
-    return calibrate_resistance(raw_ohms)
+
+    if math.isinf(raw_ohms):
+        return raw_ohms
+
+    corrected = calibrate_resistance(raw_ohms)
+    return max(R_MIN_OHMS, min(corrected, R_MAX_OHMS))
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
