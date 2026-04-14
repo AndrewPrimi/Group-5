@@ -3,8 +3,9 @@ import time
 from collections import deque
 
 GPIO_PIN   = 5    # Comparator output -> Pi GPIO 5
-MIN_DT_US  = 600  # reject false edges — real period at 1kHz = 1000µs
-BUFFER_LEN = 32   # rolling average over last 32 periods
+MIN_DT_US       = 50   # ignore pulses shorter than 50µs
+BUFFER_LEN      = 32   # rolling average over last 32 periods
+EDGE_DIVISOR    = 3    # comparator fires 3 edges per sine cycle — divide out
 
 
 class FrequencyMeter:
@@ -24,7 +25,7 @@ class FrequencyMeter:
             if dt >= MIN_DT_US:
                 self._buf.append(dt)
                 avg_dt = sum(self._buf) / len(self._buf)
-                self.frequency = 1_000_000.0 / avg_dt
+                self.frequency = (1_000_000.0 / avg_dt) / EDGE_DIVISOR
 
         self.last_tick = tick
 
