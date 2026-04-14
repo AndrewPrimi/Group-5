@@ -22,12 +22,12 @@ COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
 R_REF_OHMS            = 13000
-R_REF_TOLERANCE_PCT   = 0.01
+R_REF_TOLERANCE_PCT   = 0.02
 
 R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
-_SETTLE_S = 0.01
+_SETTLE_S = 0.02
 
 # -------------------------------------------------------------------
 # Step-based calibration points from your measured data
