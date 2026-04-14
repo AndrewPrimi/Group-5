@@ -2,12 +2,12 @@
 ohmmeter.py
 SAR (Successive Approximation Register) ADC ohmmeter functions.
 
-Uses step-based calibration based on measured hardware behavior.
-Display range is limited to 500 to 10000 ohms.
-Special cases:
-- Open circuit
-- Short circuit
-- Not in range
+Behavior:
+- Keeps the current SAR logic and step behavior
+- Uses step-based coarse conversion
+- Applies a second calibration layer using real measured data
+- Supports open circuit / short circuit handling in Driver.py
+- Intended display range: 500 to 10000 ohms
 """
 
 import time
@@ -22,22 +22,39 @@ COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
 R_REF_OHMS            = 13000
-R_REF_TOLERANCE_PCT   = 0.01
-
-R_MIN_OHMS = 500
-R_MAX_OHMS = 10000
+R_REF_TOLERANCE_PCT   = 0.005   # 0.5 percent
+R_MIN_OHMS            = 500
+R_MAX_OHMS            = 10000
 
 _SETTLE_S = 0.02
 
 # -------------------------------------------------------------------
-# Step-based calibration points from your measured data
-# Format: (step, actual_ohms)
+# Coarse step-to-resistance points from the behavior you already got
+# Format: (step, coarse_resistance)
 # -------------------------------------------------------------------
 STEP_CAL_POINTS = [
     (18, 10000.0),
     (22, 5000.0),
     (25, 3000.0),
     (31, 1000.0),
+]
+
+# -------------------------------------------------------------------
+# Fine calibration from current displayed/coarse values -> actual values
+# Format: (coarse_displayed_ohms, actual_ohms)
+# These came from your real measurements.
+# -------------------------------------------------------------------
+DISPLAY_CAL_POINTS = [
+    (1000.0,  520.0),
+    (1333.0,  1578.0),
+    (1667.0,  1790.0),
+    (2333.0,  2360.0),
+    (2667.0,  2630.0),
+    (3000.0,  2950.0),
+    (3667.0,  3570.0),
+    (6250.0,  6140.0),
+    (7500.0,  6710.0),
+    (10000.0, 9730.0),
 ]
 
 
@@ -59,13 +76,17 @@ def _write_dac(pi, spi_handle, step):
 
 def sar_measure(pi, spi_handle, comp_pin):
     step = 0
+
     for bit_pos in range(4, -1, -1):
         trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
+        print(
+            f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  "
+            f"-> {'KEEP' if comp == 0 else 'DISCARD'}"
+        )
 
         if comp == 0:
             step = trial
@@ -86,26 +107,19 @@ def _interp(x, x0, y0, x1, y1):
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
 
-def calibrate_step_to_resistance(step):
+def _base_step_to_resistance(step):
     """
-    Convert SAR step directly to resistance using measured data.
-
-    Special handling:
-    - very low steps behave like open circuit
-    - very high steps behave like short circuit / very low resistance
+    Convert SAR step to the coarse resistance value using the step points
+    that already matched your hardware reasonably well.
     """
     pts = sorted(STEP_CAL_POINTS)
 
-    # Open circuit region
+    # open-circuit region
     if step < pts[0][0]:
         return float('inf')
 
-    # Short circuit / very low resistance region
-    if step > pts[-1][0]:
-        return 0.0
-
-    # Exact top endpoint
-    if step == pts[-1][0]:
+    # low-resistance end
+    if step >= pts[-1][0]:
         return pts[-1][1]
 
     for i in range(len(pts) - 1):
@@ -117,21 +131,73 @@ def calibrate_step_to_resistance(step):
     return float('inf')
 
 
+def _apply_display_calibration(coarse_ohms):
+    """
+    Convert the coarse/displayed resistance into the actual resistance
+    using measured calibration data.
+    """
+    if math.isinf(coarse_ohms):
+        return coarse_ohms
+
+    pts = sorted(DISPLAY_CAL_POINTS)
+
+    if coarse_ohms <= pts[0][0]:
+        return _interp(coarse_ohms, *pts[0], *pts[1])
+
+    for i in range(len(pts) - 1):
+        x0, y0 = pts[i]
+        x1, y1 = pts[i + 1]
+        if x0 <= coarse_ohms <= x1:
+            return _interp(coarse_ohms, x0, y0, x1, y1)
+
+    return _interp(coarse_ohms, *pts[-2], *pts[-1])
+
+
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     """
-    Main resistance conversion.
+    Main conversion used by Driver.py.
+
     Returns:
     - float('inf') for open circuit
-    - 0.0 for short circuit / near-short
-    - calibrated resistance otherwise
+    - calibrated actual resistance otherwise
     """
-    return calibrate_step_to_resistance(step)
+    coarse = _base_step_to_resistance(step)
+    actual = _apply_display_calibration(coarse)
+
+    if math.isinf(actual):
+        return actual
+
+    return actual
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    resistance = step_to_resistance(step, r_ref)
+    """
+    Estimate tolerance using neighboring SAR steps plus a small resistor
+    tolerance term.
 
-    if math.isinf(resistance) or resistance <= 0:
+    This is much better than a flat 1 percent because it reflects how much
+    one SAR step changes the measured value in that part of the curve.
+    """
+    r_mid = step_to_resistance(step, r_ref)
+
+    if math.isinf(r_mid):
         return 0.0
 
-    return resistance * R_REF_TOLERANCE_PCT
+    prev_step = max(0, step - 1)
+    next_step = min(MCP4131_MAX_STEPS, step + 1)
+
+    r_prev = step_to_resistance(prev_step, r_ref)
+    r_next = step_to_resistance(next_step, r_ref)
+
+    neighbor_diffs = []
+
+    if not math.isinf(r_prev):
+        neighbor_diffs.append(abs(r_mid - r_prev))
+
+    if not math.isinf(r_next):
+        neighbor_diffs.append(abs(r_next - r_mid))
+
+    quant_error = max(neighbor_diffs) / 2 if neighbor_diffs else 0.0
+    ref_error = r_mid * R_REF_TOLERANCE_PCT
+
+    return quant_error + ref_error
