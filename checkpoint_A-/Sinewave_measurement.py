@@ -3,7 +3,7 @@ import time
 from collections import deque
 
 GPIO_PIN   = 5    # Comparator output -> Pi GPIO 5
-MIN_DT_US  = 50   # ignore pulses shorter than 50µs (~20kHz max)
+MIN_DT_US  = 600  # reject false edges — real period at 1kHz = 1000µs
 BUFFER_LEN = 32   # rolling average over last 32 periods
 
 
