@@ -47,9 +47,14 @@ def close_adc(pi, spi_handle):
 
 
 def _write_dac(pi, spi_handle, step):
-    """Scale 5-bit step (0..31) to MCP4131 7-bit register DAC (0..127)."""
+    """Scale 5-bit step (0..31) to MCP4131 7-bit register DAC (0..127).
+
+    Reversed because:
+      P0A -> GND
+      P0B -> 3.3V
+    """
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    dac_code = round(step * 127 / MCP4131_MAX_STEPS)
+    dac_code = round((MCP4131_MAX_STEPS - step) * 127 / MCP4131_MAX_STEPS)
     pi.spi_write(spi_handle, [0x00, dac_code])
 
 
@@ -102,7 +107,7 @@ def calibrate_resistance(raw_ohms):
 
 
 def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
-    """Convert SAR step to raw resistance before calibration."""
+    """Return the raw resistance from the step value."""
     if step <= 0:
         return float('inf')
 
@@ -113,34 +118,16 @@ def step_to_raw_resistance(step, r_ref=R_REF_OHMS):
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
-    """Convert SAR step to calibrated resistance."""
+    """Return calibrated resistance from the SAR step."""
     raw_ohms = step_to_raw_resistance(step, r_ref)
-    corrected = calibrate_resistance(raw_ohms)
-
-    if math.isinf(corrected):
-        return corrected
-
-    return max(R_MIN_OHMS, min(corrected, R_MAX_OHMS))
+    return calibrate_resistance(raw_ohms)
 
 
-def tolerance(step, r_ref=R_REF_OHMS, r_ref_tol_pct=R_REF_TOLERANCE_PCT):
-    """
-    Estimate measurement tolerance from:
-    - quantization error of one half step
-    - reference resistor tolerance
-    """
-    measured = step_to_resistance(step, r_ref)
+def tolerance(step, r_ref=R_REF_OHMS):
+    """Simple tolerance estimate based on reference resistor tolerance."""
+    resistance = step_to_resistance(step, r_ref)
 
-    if math.isinf(measured) or measured <= 0:
+    if math.isinf(resistance):
         return float('inf')
 
-    lower_step = max(1, step - 1)
-    upper_step = min(MCP4131_MAX_STEPS - 1, step + 1)
-
-    lower_r = step_to_resistance(lower_step, r_ref)
-    upper_r = step_to_resistance(upper_step, r_ref)
-
-    quant_error = max(abs(measured - lower_r), abs(upper_r - measured))
-    ref_error = measured * r_ref_tol_pct
-
-    return quant_error + ref_error
+    return resistance * R_REF_TOLERANCE_PCT
