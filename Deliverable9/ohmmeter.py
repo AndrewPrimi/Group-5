@@ -47,14 +47,9 @@ def close_adc(pi, spi_handle):
 
 
 def _write_dac(pi, spi_handle, step):
-    """Scale 5-bit step (0..31) to MCP4131 7-bit register DAC (0..127).
-
-    Reversed because:
-      P0A -> GND
-      P0B -> 3.3V
-    """
+    """Scale 5-bit step (0..31) to MCP4131 7-bit register DAC (0..127)."""
     step = max(0, min(step, MCP4131_MAX_STEPS))
-    dac_code = round((MCP4131_MAX_STEPS - step) * 127 / MCP4131_MAX_STEPS)
+    dac_code = round(step * 127 / MCP4131_MAX_STEPS)
     pi.spi_write(spi_handle, [0x00, dac_code])
 
 
