@@ -4,7 +4,7 @@ from collections import deque
 
 GPIO_PIN   = 5    # Comparator output -> Pi GPIO 5
 MIN_DT_US  = 50   # ignore pulses shorter than 50µs (~20kHz max)
-BUFFER_LEN = 8    # rolling average over last 8 periods
+BUFFER_LEN = 32   # rolling average over last 32 periods
 
 
 class FrequencyMeter:
