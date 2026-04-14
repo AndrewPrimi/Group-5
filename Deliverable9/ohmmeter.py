@@ -22,14 +22,14 @@ COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
 R_REF_OHMS            = 13000
-R_REF_TOLERANCE_PCT   = 0.005   # 0.5 percent
+R_REF_TOLERANCE_PCT   = 0.005
 R_MIN_OHMS            = 500
 R_MAX_OHMS            = 10000
 
 _SETTLE_S = 0.02
 
 # -------------------------------------------------------------------
-# Coarse step-to-resistance points from the behavior you already got
+# Coarse step-to-resistance points from measured hardware behavior
 # Format: (step, coarse_resistance)
 # -------------------------------------------------------------------
 STEP_CAL_POINTS = [
@@ -40,9 +40,8 @@ STEP_CAL_POINTS = [
 ]
 
 # -------------------------------------------------------------------
-# Fine calibration from current displayed/coarse values -> actual values
+# Fine calibration from coarse displayed value -> actual value
 # Format: (coarse_displayed_ohms, actual_ohms)
-# These came from your real measurements.
 # -------------------------------------------------------------------
 DISPLAY_CAL_POINTS = [
     (1000.0,  520.0),
@@ -114,11 +113,9 @@ def _base_step_to_resistance(step):
     """
     pts = sorted(STEP_CAL_POINTS)
 
-    # open-circuit region
     if step < pts[0][0]:
         return float('inf')
 
-    # low-resistance end
     if step >= pts[-1][0]:
         return pts[-1][1]
 
@@ -172,32 +169,21 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 def tolerance(step, r_ref=R_REF_OHMS):
     """
-    Estimate tolerance using neighboring SAR steps plus a small resistor
-    tolerance term.
-
-    This is much better than a flat 1 percent because it reflects how much
-    one SAR step changes the measured value in that part of the curve.
+    Improved tolerance:
+    - small percentage error
+    - minimum floor
+    - capped so it never explodes
     """
-    r_mid = step_to_resistance(step, r_ref)
+    resistance = step_to_resistance(step, r_ref)
 
-    if math.isinf(r_mid):
+    if math.isinf(resistance):
         return 0.0
 
-    prev_step = max(0, step - 1)
-    next_step = min(MCP4131_MAX_STEPS, step + 1)
+    percent_error = resistance * 0.005
+    min_error = 10.0
+    max_error = 150.0
 
-    r_prev = step_to_resistance(prev_step, r_ref)
-    r_next = step_to_resistance(next_step, r_ref)
+    tol = max(percent_error, min_error)
+    tol = min(tol, max_error)
 
-    neighbor_diffs = []
-
-    if not math.isinf(r_prev):
-        neighbor_diffs.append(abs(r_mid - r_prev))
-
-    if not math.isinf(r_next):
-        neighbor_diffs.append(abs(r_next - r_mid))
-
-    quant_error = max(neighbor_diffs) / 2 if neighbor_diffs else 0.0
-    ref_error = r_mid * R_REF_TOLERANCE_PCT
-
-    return quant_error + ref_error
+    return tol
