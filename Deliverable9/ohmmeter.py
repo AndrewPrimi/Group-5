@@ -25,11 +25,6 @@ R_MAX_OHMS = 10000
 
 _SETTLE_S = 0.02
 
-# -------------------------------------------------------------------
-# Calibration points
-# Format: (raw_measured_ohms, actual_ohms)
-# Add more points later if needed.
-# -------------------------------------------------------------------
 CAL_POINTS = [
     (214.0,   220.0),
     (5750.0,  5000.0),
@@ -61,9 +56,9 @@ def sar_measure(pi, spi_handle, comp_pin):
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
+        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 1 else 'DISCARD'}")
 
-        if comp == 0:
+        if comp == 1:
             step = trial
 
     _write_dac(pi, spi_handle, step)
