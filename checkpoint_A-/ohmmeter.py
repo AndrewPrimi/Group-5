@@ -27,7 +27,7 @@ R_REF_TOLERANCE_PCT   = 0.01
 R_MIN_OHMS = 500
 R_MAX_OHMS = 10000
 
-_SETTLE_S = 0.02
+_SETTLE_S = 0.05
 
 # -------------------------------------------------------------------
 # Step-based calibration points from your measured data
