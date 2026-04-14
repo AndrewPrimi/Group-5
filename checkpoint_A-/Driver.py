@@ -36,8 +36,6 @@ from dc_reference_single import DCReferenceSingleGenerator, MIN_VOLT, MAX_VOLT
 from voltmeter import (
     COMPARATOR1_PIN,
     run_measurement,
-    step_to_voltage,
-    _averaged_measure as volt_averaged_measure,
 )
 
 from ohmmeter import (
@@ -56,6 +54,7 @@ from Sinewave import (
     AMP_STEP as SINE_AMP_STEP,
 )
 from Sinewave_measurement import FrequencyMeter
+from DC_ref_internal import measure_dc_ref
 
 
 pi = pigpio.pi()
@@ -510,8 +509,7 @@ def run_dc_output():
                     now = time.time()
                     if now - last_update >= 0.5:
                         last_update = now
-                        step = volt_averaged_measure(pi, spi_ce1, COMPARATOR1_PIN, n=11)
-                        measured = step_to_voltage(step)
+                        measured, _ = measure_dc_ref(pi, spi_ce1)
                         lcd.put_line(0, "DC Ref: ON")
                         lcd.put_line(1, f"Set: {state['dc_voltage']:+.3f} V")
                         lcd.put_line(2, f"Meas: {measured:+.2f} V")
