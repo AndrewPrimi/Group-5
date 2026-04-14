@@ -5,7 +5,7 @@ from collections import deque
 GPIO_PIN   = 5    # Comparator output -> Pi GPIO 5
 MIN_DT_US       = 50   # ignore pulses shorter than 50µs
 BUFFER_LEN      = 32   # rolling average over last 32 periods
-EDGE_DIVISOR    = 1    # no division — one edge per sine cycle
+EDGE_DIVISOR    = 2    # comparator fires 2 edges per sine cycle — divide out
 
 
 class FrequencyMeter:
