@@ -57,7 +57,7 @@ def measure_dc_ref(pi, spi_handle, n=11):
     Uses the same STEP_TO_VOLT calibration table as the external voltmeter
     since it is the same ADC circuit.
     """
-    pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_OFF)
+    pi.set_pull_up_down(COMPARATOR_PIN, pigpio.PUD_UP)
     step = _averaged_measure(pi, spi_handle, n)
     voltage = step_to_voltage(step)
     tolerance = step_to_tolerance(step)
