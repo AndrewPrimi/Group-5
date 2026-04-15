@@ -22,7 +22,6 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-# Used only for displayed tolerance
 R_REF_OHMS            = 2000
 R_REF_TOLERANCE_PCT   = 0.02
 
@@ -49,6 +48,7 @@ STEP_CAL_POINTS = [
     (16, 1793.3),
     (17, 1584.5),
     (20,  991.3),
+    (23,  673.7),
 ]
 
 
@@ -112,20 +112,16 @@ def calibrate_step_to_resistance(step):
     """
     pts = sorted(STEP_CAL_POINTS)
 
-    # Lower than smallest calibrated step means resistance above top range
     if step < pts[0][0]:
         return float('inf')
 
-    # Higher than largest calibrated step means resistance below bottom range
     if step > pts[-1][0]:
         return 0.0
 
-    # Exact point
     for s, r in pts:
         if step == s:
             return r
 
-    # Interpolate between neighboring points
     for i in range(len(pts) - 1):
         s0, r0 = pts[i]
         s1, r1 = pts[i + 1]
@@ -149,9 +145,6 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
-    """
-    Simple display tolerance.
-    """
     resistance = step_to_resistance(step, r_ref)
 
     if math.isinf(resistance) or resistance <= 0:
