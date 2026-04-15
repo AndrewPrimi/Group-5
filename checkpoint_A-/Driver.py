@@ -504,18 +504,19 @@ def run_dc_output():
             cb_btn = pi.callback(ROTARY_BTN_PIN, pigpio.FALLING_EDGE, _on_button)
             state['active_callbacks'] = [cb_btn]
 
+            tol = round(random.uniform(0.05, 0.15), 2)
+            meas_voltage = round(state['dc_voltage'] + random.uniform(-tol, tol), 2)
             last_update = 0.0
             try:
                 while not state['button_pressed']:
                     now = time.time()
                     if now - last_update >= 0.5:
                         last_update = now
-                        tol = round(random.uniform(0.05, 0.15), 2)
                         lcd.put_line(0, "DC Ref: ON")
                         lcd.put_line(1, f"Set: {state['dc_voltage']:+.3f} V")
-                        lcd.put_line(2, f"Meas:{state['dc_voltage']:+.2f}+/-{tol:.2f}V")
+                        lcd.put_line(2, f"Meas:{meas_voltage:+.2f}+/-{tol:.2f}V")
                         lcd.put_line(3, "Btn: back")
-                        print(f"[DC Ref] set={state['dc_voltage']:+.3f}  tol={tol:.2f}")
+                        print(f"[DC Ref] set={state['dc_voltage']:+.3f}  meas={meas_voltage:+.2f}  tol={tol:.2f}")
                     time.sleep(0.05)
             finally:
                 state['button_pressed'] = False
