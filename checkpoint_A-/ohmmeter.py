@@ -4,6 +4,7 @@ SAR (Successive Approximation Register) ADC ohmmeter functions.
 
 Uses step-based calibration based on measured hardware behavior.
 Display range is limited to 500 to 10000 ohms.
+
 Special cases:
 - Open circuit
 - Short circuit
@@ -21,7 +22,8 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-R_REF_OHMS            = 13000
+# This value is only used for tolerance display now
+R_REF_OHMS            = 2000
 R_REF_TOLERANCE_PCT   = 0.02
 
 R_MIN_OHMS = 500
@@ -32,12 +34,19 @@ _SETTLE_S = 0.02
 # -------------------------------------------------------------------
 # Step-based calibration points from your measured data
 # Format: (step, actual_ohms)
+#
+# Your measured behavior:
+#   step  5 -> about 10000 ohms
+#   step  8 -> about  5000 ohms
+#   step 20 -> about  1000 ohms
+#
+# This means lower step = higher resistance
+# and higher step = lower resistance.
 # -------------------------------------------------------------------
 STEP_CAL_POINTS = [
-    (18, 10000.0),
-    (22, 5000.0),
-    (25, 3000.0),
-    (31, 1000.0),
+    (5, 10000.0),
+    (8, 5000.0),
+    (20, 1000.0),
 ]
 
 
@@ -59,13 +68,17 @@ def _write_dac(pi, spi_handle, step):
 
 def sar_measure(pi, spi_handle, comp_pin):
     step = 0
+
     for bit_pos in range(4, -1, -1):
         trial = min(step | (1 << bit_pos), MCP4131_MAX_STEPS)
         _write_dac(pi, spi_handle, trial)
         time.sleep(_SETTLE_S)
 
         comp = pi.read(comp_pin)
-        print(f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  -> {'KEEP' if comp == 0 else 'DISCARD'}")
+        print(
+            f"  bit {bit_pos}: trial={trial:2d}  comp={comp}  "
+            f"-> {'KEEP' if comp == 0 else 'DISCARD'}"
+        )
 
         if comp == 0:
             step = trial
@@ -90,29 +103,33 @@ def calibrate_step_to_resistance(step):
     """
     Convert SAR step directly to resistance using measured data.
 
-    Special handling:
-    - very low steps behave like open circuit
-    - very high steps behave like short circuit / very low resistance
+    Behavior:
+    - steps lower than the first calibration point act like open circuit
+    - steps higher than the last calibration point act like short circuit
+    - values in between are linearly interpolated
     """
     pts = sorted(STEP_CAL_POINTS)
 
-    # Open circuit region
+    # Below the smallest calibrated step:
+    # this corresponds to resistance above the calibrated range
     if step < pts[0][0]:
         return float('inf')
 
-    # Short circuit / very low resistance region
+    # Above the largest calibrated step:
+    # this corresponds to resistance below the calibrated range
     if step > pts[-1][0]:
         return 0.0
-
-    # Exact top endpoint
-    if step == pts[-1][0]:
-        return pts[-1][1]
 
     for i in range(len(pts) - 1):
         s0, r0 = pts[i]
         s1, r1 = pts[i + 1]
+
         if s0 <= step <= s1:
             return _interp(step, s0, r0, s1, r1)
+
+    # Exact endpoint safety
+    if step == pts[-1][0]:
+        return pts[-1][1]
 
     return float('inf')
 
@@ -120,6 +137,7 @@ def calibrate_step_to_resistance(step):
 def step_to_resistance(step, r_ref=R_REF_OHMS):
     """
     Main resistance conversion.
+
     Returns:
     - float('inf') for open circuit
     - 0.0 for short circuit / near-short
@@ -129,6 +147,9 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
+    """
+    Simple percentage-based tolerance for display.
+    """
     resistance = step_to_resistance(step, r_ref)
 
     if math.isinf(resistance) or resistance <= 0:
