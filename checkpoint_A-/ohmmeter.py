@@ -22,7 +22,7 @@ ADC_SPI_FLAGS     = 0
 COMPARATOR2_PIN   = 24
 MCP4131_MAX_STEPS = 31
 
-# This value is only used for tolerance display now
+# Used only for displayed tolerance
 R_REF_OHMS            = 2000
 R_REF_TOLERANCE_PCT   = 0.02
 
@@ -32,21 +32,23 @@ R_MAX_OHMS = 10000
 _SETTLE_S = 0.02
 
 # -------------------------------------------------------------------
-# Step-based calibration points from your measured data
+# Step-based calibration points from measured hardware data
 # Format: (step, actual_ohms)
 #
-# Your measured behavior:
-#   step  5 -> about 10000 ohms
-#   step  8 -> about  5000 ohms
-#   step 20 -> about  1000 ohms
-#
-# This means lower step = higher resistance
-# and higher step = lower resistance.
+# Lower step = higher resistance
+# Higher step = lower resistance
 # -------------------------------------------------------------------
 STEP_CAL_POINTS = [
-    (5, 10000.0),
-    (8, 5000.0),
-    (20, 1000.0),
+    (5,  9830.0),
+    (6,  6690.0),
+    (7,  6148.0),
+    (8,  5109.0),
+    (11, 3551.8),
+    (12, 2947.7),
+    (13, 2644.2),
+    (16, 1793.3),
+    (17, 1584.5),
+    (20,  991.3),
 ]
 
 
@@ -110,26 +112,26 @@ def calibrate_step_to_resistance(step):
     """
     pts = sorted(STEP_CAL_POINTS)
 
-    # Below the smallest calibrated step:
-    # this corresponds to resistance above the calibrated range
+    # Lower than smallest calibrated step means resistance above top range
     if step < pts[0][0]:
         return float('inf')
 
-    # Above the largest calibrated step:
-    # this corresponds to resistance below the calibrated range
+    # Higher than largest calibrated step means resistance below bottom range
     if step > pts[-1][0]:
         return 0.0
 
+    # Exact point
+    for s, r in pts:
+        if step == s:
+            return r
+
+    # Interpolate between neighboring points
     for i in range(len(pts) - 1):
         s0, r0 = pts[i]
         s1, r1 = pts[i + 1]
 
         if s0 <= step <= s1:
             return _interp(step, s0, r0, s1, r1)
-
-    # Exact endpoint safety
-    if step == pts[-1][0]:
-        return pts[-1][1]
 
     return float('inf')
 
@@ -148,7 +150,7 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
 def tolerance(step, r_ref=R_REF_OHMS):
     """
-    Simple percentage-based tolerance for display.
+    Simple display tolerance.
     """
     resistance = step_to_resistance(step, r_ref)
 
