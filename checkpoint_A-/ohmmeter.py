@@ -49,6 +49,7 @@ STEP_CAL_POINTS = [
     (17, 1584.5),
     (20,  991.3),
     (23,  673.7),
+    (25,  494.1),
 ]
 
 
@@ -107,16 +108,13 @@ def calibrate_step_to_resistance(step):
 
     Behavior:
     - steps lower than the first calibration point act like open circuit
-    - steps higher than the last calibration point act like short circuit
-    - values in between are linearly interpolated
+    - values between calibration points are linearly interpolated
+    - values beyond the last calibration point are extrapolated
     """
     pts = sorted(STEP_CAL_POINTS)
 
     if step < pts[0][0]:
         return float('inf')
-
-    if step > pts[-1][0]:
-        return 0.0
 
     for s, r in pts:
         if step == s:
@@ -129,7 +127,9 @@ def calibrate_step_to_resistance(step):
         if s0 <= step <= s1:
             return _interp(step, s0, r0, s1, r1)
 
-    return float('inf')
+    s0, r0 = pts[-2]
+    s1, r1 = pts[-1]
+    return _interp(step, s0, r0, s1, r1)
 
 
 def step_to_resistance(step, r_ref=R_REF_OHMS):
@@ -138,10 +138,17 @@ def step_to_resistance(step, r_ref=R_REF_OHMS):
 
     Returns:
     - float('inf') for open circuit
-    - 0.0 for short circuit / near-short
     - calibrated resistance otherwise
     """
-    return calibrate_step_to_resistance(step)
+    resistance = calibrate_step_to_resistance(step)
+
+    if math.isinf(resistance):
+        return resistance
+
+    if resistance <= 0:
+        return 0.0
+
+    return resistance
 
 
 def tolerance(step, r_ref=R_REF_OHMS):
@@ -150,4 +157,7 @@ def tolerance(step, r_ref=R_REF_OHMS):
     if math.isinf(resistance) or resistance <= 0:
         return 0.0
 
-    return resistance * R_REF_TOLERANCE_PCT
+    if resistance < 1000:
+        return max(15.0, resistance * 0.03)
+
+    return max(20.0, resistance * R_REF_TOLERANCE_PCT)
