@@ -20,9 +20,6 @@ MIN_VOLT = -5.0
 
 WIPER_CMD = 0x10  # W1 ONLY
 
-# Calibration from your original file:
-# -5V → 127
-# +5V → 49
 STEP_AT_NEG5 = 127
 STEP_AT_POS5 = 0
 

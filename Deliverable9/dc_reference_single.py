@@ -35,11 +35,11 @@ def _clamp(value, lo, hi):
 
 def _volt_to_step(voltage):
     """
-    Convert voltage [-5, +5] → digipot step (W1 only)
+    Convert voltage [-5, +5] to digipot step (W1 only)
     """
     voltage = _clamp(voltage, MIN_VOLT, MAX_VOLT)
 
-    # Normalize to 0 → 1
+    # Normalize to a range of [0 1]
     t = (voltage - MIN_VOLT) / (MAX_VOLT - MIN_VOLT)
 
     # Linear interpolation

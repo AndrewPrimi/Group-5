@@ -9,19 +9,23 @@ EDGE_DIVISOR    = 1   # comparator fires 2 edges per sine cycle — divide out
 
 
 class FrequencyMeter:
+    """ Calculate the frequency of a sine wave on a button press."""
     def __init__(self, pi, gpio_pin=GPIO_PIN):
         self.pi        = pi
         self.gpio_pin  = gpio_pin
         self.last_tick = None
         self.frequency = 0.0
+        # The buffer stores number of periods to average (update) frequency
         self._buf      = deque(maxlen=BUFFER_LEN)
 
+        # 1 sine wave cycle = 2 ticks, so seek rising edge
         pi.set_mode(self.gpio_pin, pigpio.INPUT)
         self.cb = pi.callback(self.gpio_pin, pigpio.RISING_EDGE, self._cb)
 
     def _cb(self, gpio, level, tick):
         if self.last_tick is not None:
             dt = pigpio.tickDiff(self.last_tick, tick)
+            # On button press, change avg_dt to update frequency
             if dt >= MIN_DT_US:
                 self._buf.append(dt)
                 avg_dt = sum(self._buf) / len(self._buf)

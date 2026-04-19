@@ -97,6 +97,9 @@ def averaged_measure(pi, spi_handle, comp_pin, n=11):
 
 
 def _interp(x, x0, y0, x1, y1):
+    """Linear interpolation for predicting the correct resistance y
+       between y0 and y1. x is the step value."""
+    # x1 and x0 are the same
     if x1 == x0:
         return y0
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
@@ -113,13 +116,16 @@ def calibrate_step_to_resistance(step):
     """
     pts = sorted(STEP_CAL_POINTS)
 
+    # Open circuit region
     if step < pts[0][0]:
         return float('inf')
 
+    # Step values inside the calibration table
     for s, r in pts:
         if step == s:
             return r
 
+    # Step values between known steps do linear interpolation 
     for i in range(len(pts) - 1):
         s0, r0 = pts[i]
         s1, r1 = pts[i + 1]
@@ -127,6 +133,7 @@ def calibrate_step_to_resistance(step):
         if s0 <= step <= s1:
             return _interp(step, s0, r0, s1, r1)
 
+    # Step values between last 2 known steps
     s0, r0 = pts[-2]
     s1, r1 = pts[-1]
     return _interp(step, s0, r0, s1, r1)

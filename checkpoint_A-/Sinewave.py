@@ -22,11 +22,13 @@ def _clamp(value, lo, hi):
 
 
 def _interp(x, xp, fp):
+    # Bounds check
     if x <= xp[0]:
         return fp[0]
     if x >= xp[-1]:
         return fp[-1]
 
+    # Linear interpolation
     for i in range(1, len(xp)):
         if x <= xp[i]:
             x0, x1 = xp[i - 1], xp[i]
@@ -36,6 +38,7 @@ def _interp(x, xp, fp):
             frac = (x - x0) / (x1 - x0)
             return y0 + frac * (y1 - y0)
 
+    # Fail safe
     return fp[-1]
 
 
@@ -143,6 +146,10 @@ class SineWaveGenerator:
         return freqs[-1], freqs[-1]
 
     def _table_correction(self, amp):
+        """Returns the calibrated amplitude value based on the
+           set frequency using CAL_TABLES to do linear
+           interpolation."""
+        # Find the left-bound and right-bound freqs of the set freq 
         f0, f1 = self._find_bracketing_freqs(self._frequency)
 
         def corr_at_freq(freq):
@@ -151,6 +158,8 @@ class SineWaveGenerator:
             ys = [table[x] for x in xs]
             return _interp(amp, xs, ys)
 
+        """ Use amp to find adjusted amp values for left-bound and
+            right-bound freqs. """
         c0 = corr_at_freq(f0)
         c1 = corr_at_freq(f1)
 
@@ -182,15 +191,18 @@ class SineWaveGenerator:
         return int(_clamp(step, 0, MAX_WIPER_STEP))
 
     def _build_wave(self):
+        """ Outputs the sine wave from the PWM GPIO pin using samples
+            in slot_list to switch the pin on/off based on duty cycle. """
         n = self._get_samples()
         lut = [math.sin(2 * math.pi * i / n) for i in range(n)]
 
         period_us = 1_000_000.0 / self._frequency
 
-        slot_list = []
-        acc = 0.0
-        used = 0
+        slot_list = [] # contains the samples for storing time
+        acc = 0.0 # the ideal time elapsed in a period
+        used = 0 # the actual time used per sample
 
+        # Fill the slot list with approx pieces of the ideal period
         for _ in range(n):
             acc += period_us / n
             slot = int(round(acc - used))
@@ -199,23 +211,31 @@ class SineWaveGenerator:
             slot_list.append(slot)
             used += slot
 
+        # The resulting slot list has an error compared to acc
         target_total = int(round(period_us))
         error = target_total - sum(slot_list)
         slot_list[-1] += error
 
+        # If needed, fix the final slot time from 0 to 1
         if slot_list[-1] < 1:
             slot_list[-1] = 1
 
+        # Bit masks for turning the PWM GPIO on and off
         on_mask = 1 << PWM_GPIO
         off_mask = 1 << PWM_GPIO
+        # Stores the pulses in a list
         pulses = []
 
+        # Find the duty cycle 
         for sample, slot_us in zip(lut, slot_list):
+            # The duty cycle from a lut sample between 0 and 1
             duty = _clamp(0.5 + 0.5 * sample, 0.0, 1.0)
 
+            # high and low pulses comprise the sample value
             high_us = int(round(duty * slot_us))
             low_us = slot_us - high_us
 
+            # high_us > 0 turns on the GPIO, low_us > 0 turns off the GPIO
             if high_us > 0:
                 pulses.append(pigpio.pulse(on_mask, 0, high_us))
             if low_us > 0:
